@@ -45,6 +45,7 @@ if (!process.env.JWT_SECRET) {
 const supabaseUrl = (process.env.SUPABASE_URL || '').trim();
 const supabaseServerKey = (
   process.env.SUPABASE_SERVICE_ROLE_KEY ||
+  process.env.SUPABASE_SECRET_KEY ||
   process.env.SUPABASE_SERVICE_KEY ||
   process.env.SUPABASE_ANON_KEY ||
   ''
@@ -317,18 +318,20 @@ function inferTechnicalFromName(name, category) {
 }
 
 function normalizeProductFromPg(row) {
-  const inferred = inferTechnicalFromName(row.name, row.category);
-  const allergens = parseJsonArray(row.allergens);
+  const productName = row.nombre || row.name || '';
+  const productCategory = row.category;
+  const inferred = inferTechnicalFromName(productName, productCategory);
+  const allergens = parseJsonArray(row.alergenos ?? row.allergens);
   const ingredients = parseJsonArray(row.ingredients);
   const nutrition = parseJsonObject(row.nutrition_table);
 
   return {
     id: row.id,
-    name: row.name,
+    name: productName,
     description: row.description || '',
-    price: parseFloat(row.price) || 0,
-    category: row.category === 'sandwich' ? 'bocadillos' : row.category,
-    active: row.active !== false,
+    price: parseFloat(row.precio ?? row.price) || 0,
+    category: productCategory === 'sandwich' ? 'bocadillos' : productCategory,
+    active: (row.activo ?? row.active) !== false,
     image_url: row.image_url || 'https://images.unsplash.com/photo-1495474472287-4d71bcdd2085?w=400&q=80',
     badges: parseJsonArray(row.badges),
     allergens: allergens.length ? allergens : inferred.allergens,
@@ -348,19 +351,20 @@ function normalizeProductFromPg(row) {
 
 async function ensureLocalProductSchema() {
   const alterStatements = [
-    `ALTER TABLE menu_items ADD COLUMN IF NOT EXISTS image_url TEXT`,
-    `ALTER TABLE menu_items ADD COLUMN IF NOT EXISTS badges JSONB DEFAULT '[]'::jsonb`,
-    `ALTER TABLE menu_items ADD COLUMN IF NOT EXISTS allergens JSONB DEFAULT '[]'::jsonb`,
-    `ALTER TABLE menu_items ADD COLUMN IF NOT EXISTS options JSONB DEFAULT '{}'::jsonb`,
-    `ALTER TABLE menu_items ADD COLUMN IF NOT EXISTS ingredients JSONB DEFAULT '[]'::jsonb`,
-    `ALTER TABLE menu_items ADD COLUMN IF NOT EXISTS contains_info TEXT DEFAULT ''`,
-    `ALTER TABLE menu_items ADD COLUMN IF NOT EXISTS conservation TEXT DEFAULT 'Conservar refrigerado entre 0ºC y 4ºC'`,
-    `ALTER TABLE menu_items ADD COLUMN IF NOT EXISTS shelf_life_hours INT DEFAULT 24`,
-    `ALTER TABLE menu_items ADD COLUMN IF NOT EXISTS calories_kcal INT DEFAULT 0`,
-    `ALTER TABLE menu_items ADD COLUMN IF NOT EXISTS nutrition_table JSONB DEFAULT '{}'::jsonb`,
-    `ALTER TABLE menu_items ADD COLUMN IF NOT EXISTS sanitary_approved BOOLEAN DEFAULT true`,
-    `ALTER TABLE menu_items ADD COLUMN IF NOT EXISTS sanitary_notes TEXT DEFAULT ''`,
-    `ALTER TABLE menu_items ADD COLUMN IF NOT EXISTS approved_at TIMESTAMP`
+    `ALTER TABLE productos_menu ADD COLUMN IF NOT EXISTS category TEXT DEFAULT 'cafes'`,
+    `ALTER TABLE productos_menu ADD COLUMN IF NOT EXISTS description TEXT DEFAULT ''`,
+    `ALTER TABLE productos_menu ADD COLUMN IF NOT EXISTS image_url TEXT`,
+    `ALTER TABLE productos_menu ADD COLUMN IF NOT EXISTS badges JSONB DEFAULT '[]'::jsonb`,
+    `ALTER TABLE productos_menu ADD COLUMN IF NOT EXISTS options JSONB DEFAULT '{}'::jsonb`,
+    `ALTER TABLE productos_menu ADD COLUMN IF NOT EXISTS ingredients JSONB DEFAULT '[]'::jsonb`,
+    `ALTER TABLE productos_menu ADD COLUMN IF NOT EXISTS contains_info TEXT DEFAULT ''`,
+    `ALTER TABLE productos_menu ADD COLUMN IF NOT EXISTS conservation TEXT DEFAULT 'Conservar refrigerado entre 0ºC y 4ºC'`,
+    `ALTER TABLE productos_menu ADD COLUMN IF NOT EXISTS shelf_life_hours INT DEFAULT 24`,
+    `ALTER TABLE productos_menu ADD COLUMN IF NOT EXISTS calories_kcal INT DEFAULT 0`,
+    `ALTER TABLE productos_menu ADD COLUMN IF NOT EXISTS nutrition_table JSONB DEFAULT '{}'::jsonb`,
+    `ALTER TABLE productos_menu ADD COLUMN IF NOT EXISTS sanitary_approved BOOLEAN DEFAULT true`,
+    `ALTER TABLE productos_menu ADD COLUMN IF NOT EXISTS sanitary_notes TEXT DEFAULT ''`,
+    `ALTER TABLE productos_menu ADD COLUMN IF NOT EXISTS approved_at TIMESTAMP`
   ];
 
   for (const statement of alterStatements) {
@@ -368,10 +372,10 @@ async function ensureLocalProductSchema() {
   }
 
   await pool.query(`
-    UPDATE menu_items
+    UPDATE productos_menu
     SET
       badges = COALESCE(badges, '[]'::jsonb),
-      allergens = COALESCE(allergens, '[]'::jsonb),
+      alergenos = COALESCE(alergenos, '[]'::jsonb),
       options = COALESCE(options, '{}'::jsonb),
       ingredients = COALESCE(ingredients, '[]'::jsonb),
       contains_info = COALESCE(contains_info, ''),
@@ -386,6 +390,193 @@ async function ensureLocalProductSchema() {
 
 async function ensureLocalUserSchema() {
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS alias VARCHAR(30)`);
+}
+
+function isLocalDatabaseUnavailable(error) {
+  const message = String(error?.message || '').toLowerCase();
+  return (
+    error?.code === 'ECONNREFUSED' ||
+    error?.code === 'EPERM' ||
+    message.includes('connect econnrefused') ||
+    message.includes('connect eperm')
+  );
+}
+
+async function getActiveProductSummary() {
+  if (supabase) {
+    try {
+      const { data, count, error } = await supabase
+        .from('productos_menu')
+        .select('id', { count: 'exact' })
+        .eq('activo', true);
+
+      if (error) {
+        console.warn('⚠️ Supabase no devolvio productos activos:', error.message || String(error));
+      } else {
+        const resolvedCount = Number.isFinite(count)
+          ? count
+          : (Array.isArray(data) ? data.length : 0);
+
+        return { source: 'Supabase', count: resolvedCount };
+      }
+    } catch (error) {
+      console.warn('⚠️ No se pudo contar productos en Supabase:', error?.message || String(error));
+    }
+  }
+
+  try {
+    const result = await pool.query(
+      'SELECT COUNT(*) AS count FROM productos_menu WHERE activo = true AND sanitary_approved = true'
+    );
+
+    return {
+      source: 'PostgreSQL local',
+      count: Number.parseInt(result.rows[0]?.count, 10) || 0
+    };
+  } catch (error) {
+    if (!isLocalDatabaseUnavailable(error)) {
+      console.warn('⚠️ No se pudo contar productos en PostgreSQL local:', error?.message || String(error));
+    }
+  }
+
+  return {
+    source: 'fallback en memoria',
+    count: products.filter((product) => product.active).length
+  };
+}
+
+async function findCatalogProductById(productId) {
+  const normalizedId = String(productId || '').trim();
+
+  if (!normalizedId) {
+    return null;
+  }
+
+  try {
+    const result = await pool.query('SELECT * FROM productos_menu WHERE id = $1 LIMIT 1', [normalizedId]);
+    if (result.rows.length > 0) {
+      return normalizeProductFromPg(result.rows[0]);
+    }
+  } catch (error) {
+    console.warn('⚠️ No se pudo consultar producto en PostgreSQL local:', error?.message || String(error));
+  }
+
+  if (supabase) {
+    try {
+      const { data, error } = await supabase
+        .from('productos_menu')
+        .select('*')
+        .eq('id', normalizedId)
+        .single();
+
+      if (!error && data) {
+        return transformProducto(data);
+      }
+    } catch (error) {
+      console.warn('⚠️ No se pudo consultar producto en Supabase:', error?.message || String(error));
+    }
+  }
+
+  const fallbackProduct = products.find((product) => String(product.id) === normalizedId);
+  return fallbackProduct || null;
+}
+
+function buildLineItemNotes(item = {}) {
+  const noteParts = [];
+
+  if (item.notes) {
+    noteParts.push(String(item.notes).trim());
+  }
+
+  const chosenOptions = item.chosen_options && typeof item.chosen_options === 'object'
+    ? item.chosen_options
+    : {};
+
+  if (Array.isArray(chosenOptions.removed) && chosenOptions.removed.length > 0) {
+    noteParts.push(`Sin: ${chosenOptions.removed.join(', ')}`);
+  }
+
+  if (chosenOptions.sugar !== undefined && chosenOptions.sugar !== null && chosenOptions.sugar !== '') {
+    noteParts.push(`Azucar: ${chosenOptions.sugar}`);
+  }
+
+  return noteParts.filter(Boolean).join(' | ');
+}
+
+async function validateOrderItems(items = []) {
+  const buildValidationError = (message) => {
+    const error = new Error(message);
+    error.statusCode = 400;
+    return error;
+  };
+
+  let subtotal = 0;
+  const validatedItems = [];
+
+  for (const rawItem of items) {
+    const productId = Number.parseInt(rawItem?.product_id, 10);
+    const quantity = Number.parseInt(rawItem?.quantity, 10);
+
+    if (Number.isNaN(productId)) {
+      throw buildValidationError('Producto invalido');
+    }
+
+    if (Number.isNaN(quantity) || quantity <= 0 || quantity > 50) {
+      throw buildValidationError('Cantidad invalida (1-50)');
+    }
+
+    const product = await findCatalogProductById(productId);
+    if (!product) {
+      throw buildValidationError(`Producto ${productId} no encontrado`);
+    }
+
+    if (!product.active) {
+      throw buildValidationError(`Producto ${product.name} no esta disponible`);
+    }
+
+    const unitPrice = Number.parseFloat(product.price) || 0;
+    const itemSubtotal = unitPrice * quantity;
+    subtotal += itemSubtotal;
+
+    validatedItems.push({
+      product_id: product.id,
+      product_name: product.name,
+      quantity,
+      price: unitPrice,
+      subtotal: itemSubtotal,
+      notes: buildLineItemNotes(rawItem),
+      allergens: Array.isArray(product.allergens) ? product.allergens : []
+    });
+  }
+
+  const tax = Number((subtotal * 0.05).toFixed(2));
+  const total = Number((subtotal + tax).toFixed(2));
+
+  return {
+    subtotal: Number(subtotal.toFixed(2)),
+    tax,
+    total,
+    items: validatedItems
+  };
+}
+
+function buildOrderQueueEntry(order, items = []) {
+  const uniqueAllergens = [...new Set(
+    items.flatMap((item) => Array.isArray(item.allergens) ? item.allergens : [])
+  )];
+
+  return {
+    ...order,
+    items: items.map((item) => ({
+      product_id: item.product_id,
+      product_name: item.product_name,
+      quantity: item.quantity,
+      price: item.price,
+      subtotal: item.subtotal,
+      notes: item.notes || ''
+    })),
+    allergens: uniqueAllergens
+  };
 }
 
 // Generar token único de padre (8 caracteres alfanuméricos)
@@ -467,7 +658,8 @@ function authenticateToken(req, res, next) {
 }
 
 function isParentCapableUser(user) {
-  return Boolean(user?.is_adult) && user?.role !== 'child';
+  if (!user) return false;
+  return user.role !== 'child';
 }
 
 function requireAdmin(req, res, next) {
@@ -626,7 +818,7 @@ app.post('/api/auth/register', registrationRateLimiter, async (req, res) => {
         .insert([{
           email,
           password_hash: passwordHash,
-          name: formattedName,
+          nombre: formattedName,
           birth_date: birthDate,
           is_adult: isAdult,
           role,
@@ -652,7 +844,7 @@ app.post('/api/auth/register', registrationRateLimiter, async (req, res) => {
       // Crear en PostgreSQL local
       try {
         const result = await pool.query(
-          `INSERT INTO users (email, password_hash, name, birth_date, is_adult, role, parent_token)
+          `INSERT INTO users (email, password_hash, nombre, birth_date, is_adult, role, parent_token)
            VALUES ($1, $2, $3, $4, $5, $6, $7)
            RETURNING *`,
           [email, passwordHash, formattedName, birthDate, isAdult, role, parentToken]
@@ -698,7 +890,7 @@ app.post('/api/auth/register', registrationRateLimiter, async (req, res) => {
       user: {
         id: userData.id,
         email: userData.email,
-        name: userData.name,
+        name: userData.nombre || userData.name,
         alias: userData.alias || null,
         role: userData.role,
         isAdult: userData.is_adult,
@@ -750,7 +942,7 @@ app.post('/api/auth/login', loginRateLimiter, async (req, res) => {
         user: {
           id: 999,
           email: 'demo@demo.com',
-          name: 'Usuario Demo',
+        name: 'Usuario Demo',
           alias: null,
           role: 'customer',
           isAdult: true,
@@ -782,7 +974,7 @@ app.post('/api/auth/login', loginRateLimiter, async (req, res) => {
         user: {
           id: 1,
           email: email,
-          name: 'Administrador',
+        name: 'Administrador',
           alias: null,
           role: 'admin',
           isAdult: true,
@@ -884,7 +1076,7 @@ app.post('/api/auth/login', loginRateLimiter, async (req, res) => {
       user: {
         id: user.id,
         email: user.email,
-        name: user.name,
+        name: user.nombre || user.name,
         alias: user.alias || null,
         role: user.role,
         isAdult: user.is_adult,
@@ -910,7 +1102,7 @@ app.get('/api/auth/me', authenticateToken, async (req, res) => {
   try {
     if (!supabase) {
       const result = await pool.query(
-        'SELECT id, email, name, alias, role, is_adult, parent_token, verified_email, verified_phone, created_at FROM users WHERE id = $1 LIMIT 1',
+        'SELECT id, email, nombre AS name, alias, role, is_adult, parent_token, verified_email, verified_phone, created_at FROM users WHERE id = $1 LIMIT 1',
         [req.user.id]
       );
 
@@ -956,7 +1148,7 @@ app.get('/api/auth/me', authenticateToken, async (req, res) => {
       user: {
         id: user.id,
         email: user.email,
-        name: user.name,
+        name: user.nombre || user.name,
         alias: user.alias || null,
         role: user.role,
         isAdult: user.is_adult,
@@ -969,6 +1161,231 @@ app.get('/api/auth/me', authenticateToken, async (req, res) => {
   } catch (error) {
     console.error('Error al obtener perfil:', error);
     res.status(500).json({ error: 'Error al obtener perfil' });
+  }
+});
+
+// ============================================
+// PEDIDOS ESTANDAR (CLIENTE / PADRE / ADMIN)
+// ============================================
+
+app.post('/api/orders', authenticateToken, async (req, res) => {
+  const { items } = req.body || {};
+
+  if (req.user.role === 'child') {
+    return res.status(403).json({ error: 'Los perfiles de menor deben usar el flujo de pedidos con aprobacion parental' });
+  }
+
+  if (!Array.isArray(items) || items.length === 0) {
+    return res.status(400).json({ error: 'El carrito esta vacio' });
+  }
+
+  try {
+    const validatedOrder = await validateOrderItems(items);
+
+    if (supabase) {
+      const { data: order, error: orderError } = await supabase
+        .from('orders')
+        .insert({
+          user_id: req.user.id,
+          status: 'paid',
+          total: validatedOrder.total
+        })
+        .select()
+        .single();
+
+      if (orderError) throw orderError;
+
+      const itemsToInsert = validatedOrder.items.map((item) => ({
+        order_id: order.id,
+        menu_item_id: item.product_id,
+        quantity: item.quantity,
+        price: item.price,
+        notes: item.notes || null
+      }));
+
+      const { error: itemsError } = await supabase
+        .from('order_items')
+        .insert(itemsToInsert);
+
+      if (itemsError) throw itemsError;
+
+      return res.status(201).json({
+        order_id: order.id,
+        status: order.status,
+        total: validatedOrder.total,
+        message: 'Pedido confirmado correctamente'
+      });
+    }
+
+    const orderResult = await pool.query(
+      `INSERT INTO orders (user_id, status, total)
+       VALUES ($1, $2, $3)
+       RETURNING *`,
+      [req.user.id, 'paid', validatedOrder.total]
+    );
+
+    const order = orderResult.rows[0];
+
+    for (const item of validatedOrder.items) {
+      await pool.query(
+        `INSERT INTO order_items (order_id, menu_item_id, quantity, price, notes)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [order.id, item.product_id, item.quantity, item.price, item.notes || null]
+      );
+    }
+
+    return res.status(201).json({
+      order_id: order.id,
+      status: order.status,
+      total: validatedOrder.total,
+      message: 'Pedido confirmado correctamente'
+    });
+  } catch (error) {
+    console.error('Error al crear pedido estandar:', error);
+    return res.status(error.statusCode || 500).json({ error: error.message || 'Error al crear el pedido' });
+  }
+});
+
+app.get('/api/orders/my', authenticateToken, async (req, res) => {
+  const { status, limit = 50 } = req.query;
+
+  if (req.user.role === 'child') {
+    return res.status(403).json({ error: 'Los perfiles de menor deben consultar sus pedidos infantiles' });
+  }
+
+  try {
+    if (supabase) {
+      let query = supabase
+        .from('orders')
+        .select('*')
+        .eq('user_id', req.user.id)
+        .order('created_at', { ascending: false })
+        .limit(limit);
+
+      if (status) {
+        query = query.eq('status', status);
+      }
+
+      const { data: orders, error } = await query;
+      if (error) throw error;
+
+      const ordersWithCounts = await Promise.all((orders || []).map(async (order) => {
+        const { count } = await supabase
+          .from('order_items')
+          .select('*', { count: 'exact', head: true })
+          .eq('order_id', order.id);
+
+        return {
+          ...order,
+          items_count: count || 0
+        };
+      }));
+
+      return res.json({ orders: ordersWithCounts });
+    }
+
+    const params = [req.user.id];
+    let query = 'SELECT * FROM orders WHERE user_id = $1';
+
+    if (status) {
+      params.push(status);
+      query += ` AND status = $${params.length}`;
+    }
+
+    params.push(limit);
+    query += ` ORDER BY created_at DESC LIMIT $${params.length}`;
+
+    const result = await pool.query(query, params);
+    const ordersWithCounts = await Promise.all((result.rows || []).map(async (order) => {
+      const itemsResult = await pool.query(
+        'SELECT COUNT(*) AS count FROM order_items WHERE order_id = $1',
+        [order.id]
+      );
+
+      return {
+        ...order,
+        items_count: Number.parseInt(itemsResult.rows[0]?.count, 10) || 0
+      };
+    }));
+
+    return res.json({ orders: ordersWithCounts });
+  } catch (error) {
+    console.error('Error al listar pedidos estandar:', error);
+    return res.status(500).json({ error: 'Error al obtener pedidos' });
+  }
+});
+
+app.get('/api/orders/:id', authenticateToken, async (req, res) => {
+  const orderId = Number.parseInt(req.params.id, 10);
+
+  if (Number.isNaN(orderId)) {
+    return res.status(400).json({ error: 'ID de pedido invalido' });
+  }
+
+  if (req.user.role === 'child') {
+    return res.status(403).json({ error: 'Los perfiles de menor deben consultar sus pedidos infantiles' });
+  }
+
+  try {
+    if (supabase) {
+      let query = supabase
+        .from('orders')
+        .select('*')
+        .eq('id', orderId);
+
+      if (req.user.role !== 'admin') {
+        query = query.eq('user_id', req.user.id);
+      }
+
+      const { data: order, error } = await query.single();
+      if (error || !order) {
+        return res.status(404).json({ error: 'Pedido no encontrado' });
+      }
+
+      const { data: items, error: itemsError } = await supabase
+        .from('order_items')
+        .select('*')
+        .eq('order_id', order.id);
+
+      if (itemsError) throw itemsError;
+
+      return res.json({
+        order: {
+          ...order,
+          items: items || []
+        }
+      });
+    }
+
+    const params = [orderId];
+    let query = 'SELECT * FROM orders WHERE id = $1';
+
+    if (req.user.role !== 'admin') {
+      params.push(req.user.id);
+      query += ` AND user_id = $${params.length}`;
+    }
+
+    const orderResult = await pool.query(query, params);
+    const order = orderResult.rows[0];
+
+    if (!order) {
+      return res.status(404).json({ error: 'Pedido no encontrado' });
+    }
+
+    const itemsResult = await pool.query(
+      'SELECT * FROM order_items WHERE order_id = $1 ORDER BY id ASC',
+      [order.id]
+    );
+
+    return res.json({
+      order: {
+        ...order,
+        items: itemsResult.rows || []
+      }
+    });
+  } catch (error) {
+    console.error('Error al obtener detalle de pedido estandar:', error);
+    return res.status(500).json({ error: 'Error al obtener detalle del pedido' });
   }
 });
 
@@ -988,7 +1405,7 @@ app.put('/api/auth/profile', authenticateToken, async (req, res) => {
         .from('users')
         .update({ alias })
         .eq('id', userId)
-        .select('id, email, name, alias, role, is_adult, parent_token')
+        .select('id, email, nombre, alias, role, is_adult, parent_token')
         .single();
 
       if (error) {
@@ -1004,7 +1421,7 @@ app.put('/api/auth/profile', authenticateToken, async (req, res) => {
         `UPDATE users
          SET alias = $1
          WHERE id = $2
-         RETURNING id, email, name, alias, role, is_adult, parent_token`,
+         RETURNING id, email, nombre, alias, role, is_adult, parent_token`,
         [alias, userId]
       );
 
@@ -1020,7 +1437,7 @@ app.put('/api/auth/profile', authenticateToken, async (req, res) => {
       user: {
         id: updatedUser.id,
         email: updatedUser.email,
-        name: updatedUser.name,
+        name: updatedUser.nombre || updatedUser.name,
         alias: updatedUser.alias || null,
         role: updatedUser.role,
         isAdult: updatedUser.is_adult,
@@ -1122,7 +1539,7 @@ app.post('/api/child/link-parent', authenticateToken, linkingRateLimiter, async 
 
       const { data: parentData } = await supabase
         .from('users')
-        .select('id, name, email, role, is_adult')
+        .select('id, nombre, email, role, is_adult')
         .eq('parent_token', normalizedParentToken)
         .single();
 
@@ -1135,7 +1552,7 @@ app.post('/api/child/link-parent', authenticateToken, linkingRateLimiter, async 
       child = childResult.rows[0] || null;
 
       const parentResult = await pool.query(
-        'SELECT id, name, email, role, is_adult FROM users WHERE parent_token = $1 AND active = true LIMIT 1',
+        'SELECT id, nombre AS name, email, role, is_adult FROM users WHERE parent_token = $1 AND active = true LIMIT 1',
         [normalizedParentToken]
       );
       parent = parentResult.rows[0] || null;
@@ -1285,7 +1702,7 @@ app.get('/api/parent/link-requests', authenticateToken, async (req, res) => {
           requested_at,
           child:child_id (
             id,
-            name,
+            nombre,
             email
           )
         `)
@@ -1302,7 +1719,7 @@ app.get('/api/parent/link-requests', authenticateToken, async (req, res) => {
         l.id,
         l.status,
         l.requested_at,
-        json_build_object('id', c.id, 'name', c.name, 'email', c.email) AS child
+        json_build_object('id', c.id, 'name', c.nombre, 'email', c.email) AS child
       FROM parent_child_links l
       JOIN users c ON c.id = l.child_id
       WHERE l.parent_id = $1
@@ -1364,7 +1781,7 @@ app.put('/api/parent/link-requests/:id/approve', authenticateToken, async (req, 
         .eq('role', 'customer');
     } else {
       const linkResult = await pool.query(
-        `SELECT l.*, c.name AS child_name, c.email AS child_email
+        `SELECT l.*, c.nombre AS child_name, c.email AS child_email
          FROM parent_child_links l
          JOIN users c ON c.id = l.child_id
          WHERE l.id = $1 AND l.parent_id = $2 AND l.status = 'pending'
@@ -1495,7 +1912,7 @@ app.get('/api/child/my-parents', authenticateToken, async (req, res) => {
           approved_at,
           parent:parent_id (
             id,
-            name,
+            nombre,
             email
           )
         `)
@@ -1512,7 +1929,7 @@ app.get('/api/child/my-parents', authenticateToken, async (req, res) => {
         l.status,
         l.spending_limit,
         l.approved_at,
-        json_build_object('id', p.id, 'name', p.name, 'email', p.email) AS parent
+        json_build_object('id', p.id, 'name', p.nombre, 'email', p.email) AS parent
       FROM parent_child_links l
       JOIN users p ON p.id = l.parent_id
       WHERE l.child_id = $1
@@ -1562,7 +1979,7 @@ app.get('/api/parent/my-children', authenticateToken, async (req, res) => {
           approved_at,
           child:child_id (
             id,
-            name,
+            nombre,
             email
           )
         `)
@@ -1579,7 +1996,7 @@ app.get('/api/parent/my-children', authenticateToken, async (req, res) => {
         l.status,
         l.spending_limit,
         l.approved_at,
-        json_build_object('id', c.id, 'name', c.name, 'email', c.email) AS child
+        json_build_object('id', c.id, 'name', c.nombre, 'email', c.email) AS child
       FROM parent_child_links l
       JOIN users c ON c.id = l.child_id
       WHERE l.parent_id = $1
@@ -1603,7 +2020,7 @@ app.get('/api/products', authenticateToken, requireAdmin, async (req, res) => {
   try {
     // Primero, intentar desde PostgreSQL local
     try {
-      const result = await pool.query('SELECT * FROM menu_items ORDER BY category, name');
+      const result = await pool.query('SELECT * FROM productos_menu ORDER BY category, nombre');
       const products = result.rows.map(normalizeProductFromPg);
       console.log(`📦 ${products.length} productos desde PostgreSQL local`);
       return res.json({ data: products });
@@ -1617,7 +2034,7 @@ app.get('/api/products', authenticateToken, requireAdmin, async (req, res) => {
     }
 
     const { data, error } = await supabase
-      .from('products')
+      .from('productos_menu')
       .select('*');
 
     if (error) throw error;
@@ -1638,7 +2055,7 @@ app.get('/api/menu', async (req, res) => {
     // Primero, intentar desde PostgreSQL local
     try {
       const result = await pool.query(
-        'SELECT * FROM menu_items WHERE active = true AND sanitary_approved = true ORDER BY category, name'
+        'SELECT * FROM productos_menu WHERE activo = true AND sanitary_approved = true ORDER BY category, nombre'
       );
       const products = result.rows.map(normalizeProductFromPg);
       console.log(`📦 ${products.length} productos desde PostgreSQL local`);
@@ -1654,9 +2071,9 @@ app.get('/api/menu', async (req, res) => {
     }
 
     const { data, error } = await supabase
-      .from('products')
+      .from('productos_menu')
       .select('*')
-      .eq('active', true);
+      .eq('activo', true);
 
     if (error) throw error;
 
@@ -1681,9 +2098,9 @@ app.post('/api/products', authenticateToken, requireAdmin, async (req, res) => {
 
   try {
     const localResult = await pool.query(
-      `INSERT INTO menu_items (
-        name, description, price, category, active,
-        image_url, badges, allergens, options,
+      `INSERT INTO productos_menu (
+        nombre, description, precio, category, activo,
+        image_url, badges, alergenos, options,
         ingredients, contains_info, conservation, shelf_life_hours,
         calories_kcal, nutrition_table, sanitary_approved, sanitary_notes, approved_at
       ) VALUES (
@@ -1725,19 +2142,19 @@ app.post('/api/products', authenticateToken, requireAdmin, async (req, res) => {
   try {
     if (supabase) {
       const supabaseProduct = {
-        name: product.name,
+        nombre: product.name,
         description: product.description,
-        price: product.price,
+        precio: product.price,
         category: product.category,
-        active: product.active,
+        activo: product.active,
         image_url: product.image_url,
         badges: product.badges,
-        allergens: product.allergens,
+        alergenos: product.allergens,
         options: product.options
       };
 
       const { data, error } = await supabase
-        .from('products')
+        .from('productos_menu')
         .insert([supabaseProduct])
         .select();
 
@@ -1772,8 +2189,6 @@ app.post('/api/products', authenticateToken, requireAdmin, async (req, res) => {
 // Actualizar producto existente
 app.put('/api/products/:id', authenticateToken, requireAdmin, async (req, res) => {
   const id = String(req.params.id || '').trim();
-  const parsedId = parseInt(id, 10);
-  const hasNumericId = !Number.isNaN(parsedId);
   const updates = normalizePartialIncomingProductPayload(req.body);
 
   if (!id) {
@@ -1786,14 +2201,14 @@ app.put('/api/products/:id', authenticateToken, requireAdmin, async (req, res) =
 
   try {
     const fieldMap = {
-      name: 'name',
+      name: 'nombre',
       description: 'description',
-      price: 'price',
+      price: 'precio',
       category: 'category',
-      active: 'active',
+      active: 'activo',
       image_url: 'image_url',
       badges: 'badges',
-      allergens: 'allergens',
+      allergens: 'alergenos',
       options: 'options',
       ingredients: 'ingredients',
       contains_info: 'contains_info',
@@ -1818,10 +2233,10 @@ app.put('/api/products/:id', authenticateToken, requireAdmin, async (req, res) =
       values.push(isJson ? JSON.stringify(value) : value);
     });
 
-    if (setParts.length > 0 && hasNumericId) {
-      values.push(parsedId);
+    if (setParts.length > 0) {
+      values.push(id);
       const localResult = await pool.query(
-        `UPDATE menu_items SET ${setParts.join(', ')} WHERE id = $${values.length} RETURNING *`,
+        `UPDATE productos_menu SET ${setParts.join(', ')} WHERE id = $${values.length} RETURNING *`,
         values
       );
 
@@ -1839,14 +2254,14 @@ app.put('/api/products/:id', authenticateToken, requireAdmin, async (req, res) =
   try {
     if (supabase) {
       const supabaseUpdateMap = {
-        name: 'name',
+        name: 'nombre',
         description: 'description',
-        price: 'price',
+        price: 'precio',
         category: 'category',
-        active: 'active',
+        active: 'activo',
         image_url: 'image_url',
         badges: 'badges',
-        allergens: 'allergens',
+        allergens: 'alergenos',
         options: 'options'
       };
 
@@ -1861,7 +2276,7 @@ app.put('/api/products/:id', authenticateToken, requireAdmin, async (req, res) =
 
       if (Object.keys(supabaseUpdate).length > 0) {
         const { data, error } = await supabase
-          .from('products')
+          .from('productos_menu')
           .update(supabaseUpdate)
           .eq('id', id)
           .select();
@@ -1912,8 +2327,6 @@ app.put('/api/products/:id', authenticateToken, requireAdmin, async (req, res) =
 // Eliminar producto (borrado lógico: marcar como inactivo)
 app.delete('/api/products/:id', authenticateToken, requireAdmin, async (req, res) => {
   const id = String(req.params.id || '').trim();
-  const parsedId = parseInt(id, 10);
-  const hasNumericId = !Number.isNaN(parsedId);
   const isPermanent = req.query.permanent === 'true';
 
   if (!id) {
@@ -1921,18 +2334,18 @@ app.delete('/api/products/:id', authenticateToken, requireAdmin, async (req, res
   }
 
   try {
-    if (isPermanent && hasNumericId) {
-      const localDelete = await pool.query('DELETE FROM menu_items WHERE id = $1 RETURNING *', [parsedId]);
+    if (isPermanent) {
+      const localDelete = await pool.query('DELETE FROM productos_menu WHERE id = $1 RETURNING *', [id]);
       if (localDelete.rows.length > 0) {
         return res.json({
           data: normalizeProductFromPg(localDelete.rows[0]),
           message: 'Producto eliminado permanentemente (PostgreSQL local)'
         });
       }
-    } else if (hasNumericId) {
+    } else {
       const localDeactivate = await pool.query(
-        'UPDATE menu_items SET active = false WHERE id = $1 RETURNING *',
-        [parsedId]
+        'UPDATE productos_menu SET activo = false WHERE id = $1 RETURNING *',
+        [id]
       );
 
       if (localDeactivate.rows.length > 0) {
@@ -1950,7 +2363,7 @@ app.delete('/api/products/:id', authenticateToken, requireAdmin, async (req, res
     if (supabase) {
       if (isPermanent) {
         const { data, error } = await supabase
-          .from('products')
+          .from('productos_menu')
           .delete()
           .eq('id', id)
           .select();
@@ -1964,8 +2377,8 @@ app.delete('/api/products/:id', authenticateToken, requireAdmin, async (req, res
         }
       } else {
         const { data, error } = await supabase
-          .from('products')
-          .update({ active: false })
+          .from('productos_menu')
+          .update({ activo: false })
           .eq('id', id)
           .select();
 
@@ -2018,7 +2431,7 @@ app.get('/api/admin/statistics', authenticateToken, requireAdmin, async (req, re
     if (supabase) {
       const [{ data: users, error: usersError }, { data: orders, error: ordersError }, { data: fraudLogs, error: fraudError }] = await Promise.all([
         supabase.from('users').select('role, is_adult, created_at'),
-        supabase.from('child_orders').select('status, total, created_at'),
+        supabase.from('pedidos').select('estado, fecha_creacion'),
         supabase.from('fraud_prevention_log').select('severity, created_at')
       ]);
 
@@ -2030,15 +2443,13 @@ app.get('/api/admin/statistics', authenticateToken, requireAdmin, async (req, re
       const safeUsers = users || [];
       const safeOrders = orders || [];
       const safeFraudLogs = fraudLogs || [];
-      const totalRevenue = safeOrders.reduce((sum, order) => sum + (Number(order.total) || 0), 0);
-
       return res.json({
         summary: {
           total_users: safeUsers.length,
           total_orders: safeOrders.length,
-          total_revenue: totalRevenue,
+          total_revenue: 0,
           fraud_alerts: safeFraudLogs.length,
-          average_order_value: safeOrders.length ? totalRevenue / safeOrders.length : 0
+          average_order_value: 0
         },
         users: {
           adults: safeUsers.filter((user) => user.role !== 'child' || user.is_adult).length,
@@ -2046,12 +2457,12 @@ app.get('/api/admin/statistics', authenticateToken, requireAdmin, async (req, re
           admins: safeUsers.filter((user) => user.role === 'admin').length
         },
         orders: {
-          completed: safeOrders.filter((order) => ['paid', 'completed', 'approved'].includes(order.status)).length,
-          pending: safeOrders.filter((order) => ['pending', 'pending_approval'].includes(order.status)).length,
-          rejected: safeOrders.filter((order) => ['rejected', 'cancelled'].includes(order.status)).length
+          completed: safeOrders.filter((order) => ['PAGADO', 'COMPLETADA', 'APROBADO'].includes(order.estado)).length,
+          pending: safeOrders.filter((order) => ['PENDIENTE', 'PROCESANDO'].includes(order.estado)).length,
+          rejected: safeOrders.filter((order) => ['RECHAZADO', 'CANCELADO'].includes(order.estado)).length
         },
         today: {
-          new_orders: safeOrders.filter((order) => String(order.created_at || '').slice(0, 10) === todayDate).length,
+          new_orders: safeOrders.filter((order) => String(order.fecha_creacion || '').slice(0, 10) === todayDate).length,
           new_users: safeUsers.filter((user) => String(user.created_at || '').slice(0, 10) === todayDate).length,
           fraud_incidents: safeFraudLogs.filter((log) => String(log.created_at || '').slice(0, 10) === todayDate).length
         }
@@ -2060,7 +2471,7 @@ app.get('/api/admin/statistics', authenticateToken, requireAdmin, async (req, re
 
     const [usersResult, ordersResult] = await Promise.all([
       pool.query('SELECT role, is_adult, created_at FROM users'),
-      pool.query('SELECT status, total, created_at FROM child_orders')
+      pool.query('SELECT estado, fecha_creacion FROM pedidos')
     ]);
 
     let fraudRows = [];
@@ -2074,15 +2485,13 @@ app.get('/api/admin/statistics', authenticateToken, requireAdmin, async (req, re
     const users = usersResult.rows || [];
     const orders = ordersResult.rows || [];
     const todayDate = new Date().toISOString().slice(0, 10);
-    const totalRevenue = orders.reduce((sum, order) => sum + (Number(order.total) || 0), 0);
-
     return res.json({
       summary: {
         total_users: users.length,
         total_orders: orders.length,
-        total_revenue: totalRevenue,
+        total_revenue: 0,
         fraud_alerts: fraudRows.length,
-        average_order_value: orders.length ? totalRevenue / orders.length : 0
+        average_order_value: 0
       },
       users: {
         adults: users.filter((user) => user.role !== 'child' || user.is_adult).length,
@@ -2090,12 +2499,12 @@ app.get('/api/admin/statistics', authenticateToken, requireAdmin, async (req, re
         admins: users.filter((user) => user.role === 'admin').length
       },
       orders: {
-        completed: orders.filter((order) => ['paid', 'completed', 'approved'].includes(order.status)).length,
-        pending: orders.filter((order) => ['pending', 'pending_approval'].includes(order.status)).length,
-        rejected: orders.filter((order) => ['rejected', 'cancelled'].includes(order.status)).length
+        completed: orders.filter((order) => ['PAGADO', 'COMPLETADA', 'APROBADO'].includes(order.estado)).length,
+        pending: orders.filter((order) => ['PENDIENTE', 'PROCESANDO'].includes(order.estado)).length,
+        rejected: orders.filter((order) => ['RECHAZADO', 'CANCELADO'].includes(order.estado)).length
       },
       today: {
-        new_orders: orders.filter((order) => String(order.created_at || '').slice(0, 10) === todayDate).length,
+        new_orders: orders.filter((order) => String(order.fecha_creacion || '').slice(0, 10) === todayDate).length,
         new_users: users.filter((user) => String(user.created_at || '').slice(0, 10) === todayDate).length,
         fraud_incidents: fraudRows.filter((log) => String(log.created_at || '').slice(0, 10) === todayDate).length
       }
@@ -2129,7 +2538,7 @@ app.get('/api/admin/fraud-log', authenticateToken, requireAdmin, async (req, res
     try {
       const result = await pool.query(
         `SELECT f.id, f.user_id, f.action_type, f.severity, f.details, f.ip_address, f.user_agent, f.created_at,
-                COALESCE(u.name, 'Sistema') AS user_name
+                COALESCE(u.nombre, 'Sistema') AS user_name
          FROM fraud_prevention_log f
          LEFT JOIN users u ON u.id = f.user_id
          ORDER BY f.created_at DESC
@@ -2152,12 +2561,12 @@ app.get('/api/admin/users', authenticateToken, requireAdmin, async (req, res) =>
     // PostgreSQL local (más confiable)
     const result = await pool.query(
       `SELECT 
-        u.id, u.email, u.name, u.role, u.is_adult, u.created_at,
+        u.id, u.email, u.nombre AS name, u.role, u.is_adult, u.created_at,
         COALESCE(u.blocked, false) as blocked,
         COUNT(DISTINCT pcl.child_id) as children_count
       FROM users u
       LEFT JOIN parent_child_links pcl ON u.id = pcl.parent_id AND pcl.status = 'active'
-      GROUP BY u.id, u.email, u.name, u.role, u.is_adult, u.created_at, u.blocked
+      GROUP BY u.id, u.email, u.nombre, u.role, u.is_adult, u.created_at, u.blocked
       ORDER BY u.created_at DESC`
     );
 
@@ -2183,11 +2592,11 @@ app.get('/api/admin/users', authenticateToken, requireAdmin, async (req, res) =>
       try {
         const result = await pool.query(
           `SELECT 
-            u.id, u.email, u.name, u.role, u.is_adult, u.created_at,
+            u.id, u.email, u.nombre AS name, u.role, u.is_adult, u.created_at,
             COUNT(DISTINCT pcl.child_id) as children_count
           FROM users u
           LEFT JOIN parent_child_links pcl ON u.id = pcl.parent_id AND pcl.status = 'active'
-          GROUP BY u.id, u.email, u.name, u.role, u.is_adult, u.created_at
+          GROUP BY u.id, u.email, u.nombre, u.role, u.is_adult, u.created_at
           ORDER BY u.created_at DESC`
         );
 
@@ -2272,7 +2681,7 @@ app.put('/api/admin/users/:id', authenticateToken, requireAdmin, async (req, res
   try {
     if (supabase) {
       const updateData = {};
-      if (name) updateData.name = name;
+      if (name) updateData.nombre = name;
       if (email) updateData.email = email;
       if (role) updateData.role = role;
 
@@ -2300,7 +2709,7 @@ app.put('/api/admin/users/:id', authenticateToken, requireAdmin, async (req, res
     let paramCount = 1;
 
     if (name) {
-      updates.push(`name = $${paramCount}`);
+      updates.push(`nombre = $${paramCount}`);
       values.push(name);
       paramCount++;
     }
@@ -2385,6 +2794,76 @@ app.delete('/api/admin/users/:id', authenticateToken, requireAdmin, async (req, 
   }
 });
 
+// GET /api/admin/orders/queue - Cola real para Kitchen Display
+app.get('/api/admin/orders/queue', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    if (supabase) {
+      const { data: orders, error } = await supabase
+        .from('child_orders')
+        .select('*, child:child_id(id, name, email)')
+        .in('status', ['pending', 'approved'])
+        .order('created_at', { ascending: false })
+        .limit(100);
+
+      if (error) throw error;
+
+      const queue = await Promise.all((orders || []).map(async (order) => {
+        const { data: items, error: itemsError } = await supabase
+          .from('child_order_items')
+          .select('product_id, product_name, quantity, price, subtotal')
+          .eq('order_id', order.id);
+
+        if (itemsError) throw itemsError;
+
+        return buildOrderQueueEntry({
+          id: order.id,
+          child_id: order.child_id,
+          child_name: order.child?.name || 'Sin nombre',
+          child_email: order.child?.email || null,
+          status: order.status,
+          notes: order.notes || '',
+          created_at: order.created_at
+        }, items || []);
+      }));
+
+      return res.json({ orders: queue });
+    }
+
+    const ordersResult = await pool.query(
+      `SELECT co.id, co.child_id, co.status, co.notes, co.created_at,
+              u.nombre AS child_name, u.email AS child_email
+       FROM child_orders co
+       LEFT JOIN users u ON u.id = co.child_id
+       WHERE co.status IN ('pending', 'approved')
+       ORDER BY co.created_at DESC
+       LIMIT 100`
+    );
+
+    const queue = await Promise.all((ordersResult.rows || []).map(async (order) => {
+      const itemsResult = await pool.query(
+        `SELECT coi.product_id, coi.product_name, coi.quantity, coi.price, coi.subtotal, coi.notes, mi.alergenos AS allergens
+         FROM child_order_items coi
+         LEFT JOIN productos_menu mi ON mi.id = coi.product_id
+         WHERE coi.order_id = $1
+         ORDER BY coi.id ASC`,
+        [order.id]
+      );
+
+      const enrichedItems = (itemsResult.rows || []).map((item) => ({
+        ...item,
+        allergens: parseJsonArray(item.allergens)
+      }));
+
+      return buildOrderQueueEntry(order, enrichedItems);
+    }));
+
+    return res.json({ orders: queue });
+  } catch (error) {
+    console.error('Error al obtener cola KDS:', error);
+    return res.status(500).json({ error: 'Error al obtener la cola de cocina' });
+  }
+});
+
 // ============================================
 // FASE 3: CHILD ORDERS (Pedidos de Hijos)
 // ============================================
@@ -2447,47 +2926,27 @@ app.post('/api/child/orders', authenticateToken, async (req, res) => {
       selectedParentId = link.parent_id;
     }
 
-    // 2. Calcular total y validar productos
-    let subtotal = 0;
-    const validatedItems = [];
-
-    for (const item of items) {
-      const product = products.find(p => p.id === item.product_id);
-      if (!product) {
-        return res.status(400).json({ error: `Producto ${item.product_id} no encontrado` });
-      }
-      if (!product.active) {
-        return res.status(400).json({ error: `Producto ${product.name} no está disponible` });
-      }
-      if (item.quantity <= 0 || item.quantity > 50) {
-        return res.status(400).json({ error: 'Cantidad inválida (1-50)' });
-      }
-
-      const itemSubtotal = parseFloat(product.price) * parseInt(item.quantity);
-      subtotal += itemSubtotal;
-
-      validatedItems.push({
-        product_id: product.id,
-        product_name: product.name,
-        quantity: item.quantity,
-        price: parseFloat(product.price),
-        subtotal: itemSubtotal
-      });
-    }
-
-    const tax = subtotal * 0.05; // 5% impuesto
-    const total = subtotal + tax;
+    // 2. Calcular total y validar productos contra catalogo real
+    const validatedOrder = await validateOrderItems(items);
+    const validatedItems = validatedOrder.items.map((item) => ({
+      product_id: item.product_id,
+      product_name: item.product_name,
+      quantity: item.quantity,
+      price: item.price,
+      subtotal: item.subtotal
+    }));
+    const { subtotal, tax, total } = validatedOrder;
 
     // 3. Validar spending limit
     if (total > link.spending_limit) {
       return res.status(403).json({
-        error: `El total ($${total.toFixed(2)}) excede el límite de gasto ($${link.spending_limit})`
+        error: `El total (${total.toFixed(2)} EUR) excede el limite de gasto (${Number(link.spending_limit).toFixed(2)} EUR)`
       });
     }
 
     // 4. Validar mínimo de pedido
     if (total < 5.00) {
-      return res.status(400).json({ error: 'El monto mínimo del pedido es $5.00' });
+      return res.status(400).json({ error: 'El monto minimo del pedido es 5.00 EUR' });
     }
 
     // 5. Crear pedido
@@ -2571,7 +3030,7 @@ app.post('/api/child/orders', authenticateToken, async (req, res) => {
     }
   } catch (error) {
     console.error('Error creating child order:', error);
-    return res.status(500).json({ error: 'Error al crear el pedido' });
+    return res.status(error.statusCode || 500).json({ error: error.message || 'Error al crear el pedido' });
   }
 });
 
@@ -2615,7 +3074,7 @@ app.get('/api/child/orders', authenticateToken, async (req, res) => {
     } else {
       // PostgreSQL fallback
       const orders = await new Promise((resolve, reject) => {
-        let query = 'SELECT co.*, u.name as parent_name, u.email as parent_email FROM child_orders co LEFT JOIN users u ON co.parent_id = u.id WHERE co.child_id = $1';
+        let query = 'SELECT co.*, u.nombre as parent_name, u.email as parent_email FROM child_orders co LEFT JOIN users u ON co.parent_id = u.id WHERE co.child_id = $1';
         const params = [req.user.id];
 
         if (status) {
@@ -2695,7 +3154,7 @@ app.get('/api/child/orders/:id', authenticateToken, async (req, res) => {
       // PostgreSQL fallback
       const order = await new Promise((resolve, reject) => {
         pool.query(
-          `SELECT co.*, u.id as parent_id, u.name as parent_name, u.email as parent_email 
+          `SELECT co.*, u.id as parent_id, u.nombre as parent_name, u.email as parent_email 
            FROM child_orders co 
            LEFT JOIN users u ON co.parent_id = u.id 
            WHERE co.id = $1 AND co.child_id = $2`,
@@ -2779,7 +3238,7 @@ app.get('/api/parent/child-orders', authenticateToken, async (req, res) => {
       return res.json({ orders: ordersWithCount });
     } else {
       // PostgreSQL fallback
-      let query = `SELECT co.*, u.id as child_id, u.name as child_name, u.email as child_email 
+      let query = `SELECT co.*, u.id as child_id, u.nombre as child_name, u.email as child_email 
                    FROM child_orders co 
                    LEFT JOIN users u ON co.child_id = u.id 
                    WHERE co.parent_id = $1`;
@@ -2871,7 +3330,7 @@ app.get('/api/parent/orders/:id', authenticateToken, async (req, res) => {
       // PostgreSQL fallback
       const order = await new Promise((resolve, reject) => {
         pool.query(
-          `SELECT co.*, u.id as child_id, u.name as child_name, u.email as child_email,
+          `SELECT co.*, u.id as child_id, u.nombre as child_name, u.email as child_email,
                   pcl.spending_limit
            FROM child_orders co 
            LEFT JOIN users u ON co.child_id = u.id 
@@ -3220,33 +3679,15 @@ app.put('/api/parent/orders/:id/modify', authenticateToken, async (req, res) => 
       }
     }
 
-    // Recalcular total con nuevos items
-    let subtotal = 0;
-    const validatedItems = [];
-
-    for (const item of items) {
-      const product = products.find(p => p.id === item.product_id);
-      if (!product) {
-        return res.status(400).json({ error: `Producto ${item.product_id} no encontrado` });
-      }
-      if (item.quantity <= 0 || item.quantity > 50) {
-        return res.status(400).json({ error: 'Cantidad inválida (1-50)' });
-      }
-
-      const itemSubtotal = parseFloat(product.price) * parseInt(item.quantity);
-      subtotal += itemSubtotal;
-
-      validatedItems.push({
-        product_id: product.id,
-        product_name: product.name,
-        quantity: item.quantity,
-        price: parseFloat(product.price),
-        subtotal: itemSubtotal
-      });
-    }
-
-    const tax = subtotal * 0.05;
-    const total = subtotal + tax;
+    const validatedOrder = await validateOrderItems(items);
+    const validatedItems = validatedOrder.items.map((item) => ({
+      product_id: item.product_id,
+      product_name: item.product_name,
+      quantity: item.quantity,
+      price: item.price,
+      subtotal: item.subtotal
+    }));
+    const { subtotal, tax, total } = validatedOrder;
 
     // Actualizar pedido y reemplazar items
     if (supabase) {
@@ -3338,7 +3779,7 @@ app.put('/api/parent/orders/:id/modify', authenticateToken, async (req, res) => 
     }
   } catch (error) {
     console.error('Error modifying order:', error);
-    return res.status(500).json({ error: 'Error al modificar pedido' });
+    return res.status(error.statusCode || 500).json({ error: error.message || 'Error al modificar pedido' });
   }
 });
 
@@ -3391,7 +3832,7 @@ app.get('/api/parent/child-orders/history', authenticateToken, async (req, res) 
       return res.json({ orders: ordersWithItems });
     } else {
       // PostgreSQL fallback
-      let query = `SELECT co.*, u.id as child_id, u.name as child_name, u.email as child_email 
+      let query = `SELECT co.*, u.id as child_id, u.nombre as child_name, u.email as child_email 
                    FROM child_orders co 
                    LEFT JOIN users u ON co.child_id = u.id 
                    WHERE co.parent_id = $1`;
@@ -3467,18 +3908,31 @@ app.use((req, res) => {
 });
 
 async function startServer() {
+  if (supabase) {
+    console.log('☁️ Supabase configurado. Se priorizara como origen principal de datos.');
+  }
+
   try {
     await ensureLocalUserSchema();
     console.log('👤 Esquema local de usuarios verificado');
     await ensureLocalProductSchema();
     console.log('🧾 Esquema local de ficha técnica verificado');
   } catch (error) {
-    console.warn('⚠️ No se pudo inicializar el esquema local. Se continúa con fallback. Detalle:', error?.message || String(error));
+    if (isLocalDatabaseUnavailable(error)) {
+      if (supabase) {
+        console.log('ℹ️ PostgreSQL local no disponible. El servidor continuara usando Supabase.');
+      } else {
+        console.warn('⚠️ No se pudo inicializar el esquema local. Se continúa con fallback. Detalle:', error?.message || String(error));
+      }
+    } else {
+      console.warn('⚠️ No se pudo inicializar el esquema local. Se continúa con fallback. Detalle:', error?.message || String(error));
+    }
   }
 
-  app.listen(PORT, () => {
+  app.listen(PORT, async () => {
     console.log(`🚀 Servidor corriendo en http://localhost:${PORT}`);
-    console.log(`📊 Productos disponibles: ${products.filter(p => p.active).length}`);
+    const productSummary = await getActiveProductSummary();
+    console.log(`📊 Productos disponibles (${productSummary.source}): ${productSummary.count}`);
   });
 }
 

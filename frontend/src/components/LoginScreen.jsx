@@ -1,18 +1,25 @@
-
 import React, { useState } from "react";
+import { loginUser } from "../lib/api";
 
 export default function LoginScreen({ onLogin }) {
-  const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  function handleSubmit(e) {
+  async function handleSubmit(e) {
     e.preventDefault();
-    if (username === "demo" && password === "demo") {
-      setError("");
-      onLogin && onLogin();
-    } else {
-      setError("Usuario o contraseña incorrectos");
+    setError("");
+    setLoading(true);
+
+    try {
+      const data = await loginUser({ email, password });
+      localStorage.setItem('cafeteria_token', data.token);
+      onLogin && onLogin(data.user);
+    } catch (err) {
+      setError(err.message || "Usuario o contraseña incorrectos");
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -23,18 +30,18 @@ export default function LoginScreen({ onLogin }) {
           <img src="/imagenesEjemplo/logoOscuro.png" alt="CafeteriaApp Logo" style={{ width: '160px', height: 'auto' }} />
         </div>
         <h1>CafeteriaApp</h1>
-        <p className="subtitle">Bienvenido — inicia sesión o crea una cuenta</p>
+        <p className="subtitle">Bienvenido — inicia sesión con tu cuenta real</p>
         <form id="login-form" aria-label="Formulario de inicio de sesión" onSubmit={handleSubmit}>
-          <label htmlFor="login-username" className="sr-only">Usuario</label>
+          <label htmlFor="login-email" className="sr-only">Correo electrónico</label>
           <input
-            id="login-username"
-            type="text"
-            placeholder="Usuario"
+            id="login-email"
+            type="email"
+            placeholder="Correo electrónico"
             autoComplete="username"
             required
             aria-required="true"
-            value={username}
-            onChange={e => setUsername(e.target.value)}
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
           />
           <label htmlFor="login-password" className="sr-only">Contraseña</label>
           <input
@@ -45,16 +52,15 @@ export default function LoginScreen({ onLogin }) {
             required
             aria-required="true"
             value={password}
-            onChange={e => setPassword(e.target.value)}
+            onChange={(e) => setPassword(e.target.value)}
           />
           <div className="button-row">
-            <button type="submit" className="btn btn-primary">Entrar</button>
+            <button type="submit" className="btn btn-primary" disabled={loading}>
+              {loading ? 'Entrando...' : 'Entrar'}
+            </button>
             <button type="button" id="signup-btn" className="btn btn-outline">Crear cuenta</button>
           </div>
           {error && <p className="muted" style={{ color: "#b00" }}>{error}</p>}
-          <p className="demo-hint muted">
-            Usuario demo: <strong>demo</strong> / Contraseña: <strong>demo</strong>
-          </p>
         </form>
       </div>
     </main>

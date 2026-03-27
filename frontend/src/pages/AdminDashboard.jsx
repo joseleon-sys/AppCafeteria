@@ -10,7 +10,7 @@ import {
   deleteUser,
   getAdminStatistics,
   getFraudLog,
-  getParentChildOrders
+  getAdminOrderQueue
 } from "../lib/api";
 import "./AdminDashboard.css";
 
@@ -76,7 +76,18 @@ export default function AdminDashboard({ onLogout }) {
       return await getAdminStatistics();
     } catch (err) {
       console.error('Error en estadísticas:', err);
-      return generateMockStats();
+      return {
+        summary: {
+          total_users: 0,
+          total_orders: 0,
+          total_revenue: 0,
+          fraud_alerts: 0,
+          average_order_value: 0
+        },
+        users: { adults: 0, children: 0, admins: 0 },
+        orders: { completed: 0, pending: 0, rejected: 0 },
+        today: { new_orders: 0, new_users: 0, fraud_incidents: 0 }
+      };
     }
   };
 
@@ -104,26 +115,13 @@ export default function AdminDashboard({ onLogout }) {
 
   const fetchOrders = async () => {
     try {
-      const data = await getParentChildOrders({ limit: 50 });
+      const data = await getAdminOrderQueue();
       return data.orders || [];
     } catch (err) {
       console.error('Error en órdenes:', err);
       return [];
     }
   };
-
-  const generateMockStats = () => ({
-    summary: {
-      total_users: 156,
-      total_orders: 1240,
-      total_revenue: 3480.50,
-      fraud_alerts: 12,
-      average_order_value: 2.81
-    },
-    users: { adults: 42, children: 114, admins: 2 },
-    orders: { completed: 1200, pending: 30, rejected: 10 },
-    today: { new_orders: 45, new_users: 8, fraud_incidents: 2 }
-  });
 
   const handleLogout = () => {
     localStorage.removeItem('cafeteria_user');
@@ -467,30 +465,7 @@ export default function AdminDashboard({ onLogout }) {
   };
 
   const renderKDS = () => {
-    // Usar usuarios reales como base para órdenes de prueba
-    const testOrders = users
-      .filter(u => u.role === 'child')
-      .slice(0, 3) // Primeros 3 niños
-      .map((user, idx) => ({
-        id: user.id,
-        child_name: user.name,
-        child_id: user.id,
-        status: idx % 2 === 0 ? 'approved' : 'pending_approval',
-        created_at: new Date(Date.now() - idx * 10 * 60000).toISOString(),
-        items: [
-          { product_name: 'Café con leche', quantity: 1 },
-          { product_name: products[idx % products.length]?.name || 'Producto', quantity: 1 }
-        ],
-        allergens: [
-          'Gluten',
-          'Lácteos',
-          'Frutos secos'
-        ].slice(0, idx % 3 + 1),
-        notes: idx === 0 ? 'Sin azúcar en el café' : ''
-      }));
-
-    const pendingOrders = (orders.length > 0 ? orders : testOrders)
-      .filter(o => o.status === 'pending_approval' || o.status === 'approved');
+    const pendingOrders = orders.filter((order) => order.status === 'pending' || order.status === 'approved');
     
     return (
       <div style={{ 

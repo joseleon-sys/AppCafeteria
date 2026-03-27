@@ -240,7 +240,6 @@ export default function FancyLogin({ onLogin }) {
                   <button className="flip-card__btn" type="submit" disabled={loading}>
                     {loading ? 'Entrando...' : 'Entrar'}
                   </button>
-                  <div style={{ fontSize: 13, color: '#b08968', marginTop: 8 }}>Demo: demo@demo.com / demo</div>
                   {error && <div style={{ color: '#b00', fontSize: 14, marginTop: 8 }}>{error}</div>}
                 </form>
               </div>

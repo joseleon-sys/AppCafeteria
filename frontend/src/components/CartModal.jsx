@@ -1,13 +1,10 @@
 import React, { useState } from "react";
 import { useCart } from "../lib/CartContext";
-import HamsterSpinner from "./HamsterSpinner";
 import CheckoutModal from "./CheckoutModal";
-import { showSuccess } from "./Toast";
 import "./CartModal.css";
 
-export default function CartModal({ isOpen, onClose, onShowSpinner, user }) {
+export default function CartModal({ isOpen, onClose, user }) {
   const { cartItems, total, updateQuantity, clearCart } = useCart();
-  const [isProcessing, setIsProcessing] = useState(false);
   const [showCheckout, setShowCheckout] = useState(false);
 
   if (!isOpen) return null;
@@ -18,19 +15,6 @@ export default function CartModal({ isOpen, onClose, onShowSpinner, user }) {
     } else {
       updateQuantity(itemId, newQuantity);
     }
-  };
-
-  const handleCheckout = async () => {
-    setIsProcessing(true);
-    onShowSpinner && onShowSpinner();
-    
-    // Simular procesamiento del pedido
-    setTimeout(() => {
-      setIsProcessing(false);
-      clearCart();
-      onClose && onClose();
-      showSuccess('¡Pedido realizado con éxito!');
-    }, 2000);
   };
 
   const isEmpty = cartItems.length === 0;
@@ -112,18 +96,16 @@ export default function CartModal({ isOpen, onClose, onShowSpinner, user }) {
 
         {!isEmpty && (
           <div className="cart-modal-footer">
-            <div className="cart-actions">
+                <div className="cart-actions">
               <button 
                 className="clear-btn" 
                 onClick={clearCart}
-                disabled={isProcessing}
               >
                 Vaciar carrito
               </button>
               <button 
                 className="checkout-btn" 
                 onClick={() => setShowCheckout(true)}
-                disabled={isProcessing}
               >
                 Ir al checkout • {total.toFixed(2)} €
               </button>

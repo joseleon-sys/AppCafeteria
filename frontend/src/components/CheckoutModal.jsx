@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { useCart } from "../lib/CartContext";
 import { showError, showSuccess } from "./Toast";
+import { submitOrderForUser } from "../lib/orderService";
 import "./CheckoutModal.css";
 
 export default function CheckoutModal({ isOpen, onClose, user }) {
@@ -40,14 +41,27 @@ export default function CheckoutModal({ isOpen, onClose, user }) {
       return;
     }
 
+    if (!user) {
+      showError('Necesitas iniciar sesion para confirmar el pedido');
+      return;
+    }
+
     setIsProcessing(true);
-    
-    setTimeout(() => {
-      setIsProcessing(false);
+
+    try {
+      await submitOrderForUser(user, cartItems);
       clearCart();
       onClose && onClose();
-      showSuccess('¡Pedido confirmado! Recógelo en la cafetería.');
-    }, 3000);
+      showSuccess(user.role === 'child'
+        ? 'Pedido enviado a revision familiar'
+        : 'Pedido confirmado. Ya esta registrado en produccion.'
+      );
+    } catch (error) {
+      console.error('Error al confirmar pedido:', error);
+      showError(error.message || 'No se pudo confirmar el pedido');
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   if (!isOpen) return null;

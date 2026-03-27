@@ -1,19 +1,51 @@
 import React, { useState } from "react";
 import "./ProfileModal.css";
 import { updateProfileAlias } from "../lib/api";
-import { showSuccess } from "./Toast";
+import { showError, showSuccess } from "./Toast";
 import LinkRequestsList from "./LinkRequestsList";
+import { buildAchievementsFromOrders, buildProfileStatsFromOrders, fetchOrderHistoryForUser } from "../lib/orderService";
 
 export default function ProfileModal({ isOpen, onClose, user, onLogout, onUserUpdate }) {
   const [activeTab, setActiveTab] = useState('info');
   const [aliasInput, setAliasInput] = useState('');
   const [aliasSaving, setAliasSaving] = useState(false);
   const [aliasMessage, setAliasMessage] = useState('');
+  const [profileStats, setProfileStats] = useState(() => buildProfileStatsFromOrders([], user));
+  const [achievements, setAchievements] = useState(() => buildAchievementsFromOrders([]));
 
   React.useEffect(() => {
     setAliasInput(user?.alias || '');
     setAliasMessage('');
   }, [user?.alias, isOpen]);
+
+  React.useEffect(() => {
+    if (!isOpen || !user) return;
+
+    let cancelled = false;
+
+    const loadProfileData = async () => {
+      try {
+        const orders = await fetchOrderHistoryForUser(user);
+        if (!cancelled) {
+          setProfileStats(buildProfileStatsFromOrders(orders, user));
+          setAchievements(buildAchievementsFromOrders(orders));
+        }
+      } catch (error) {
+        console.error('Error cargando estadisticas de perfil:', error);
+        if (!cancelled) {
+          setProfileStats(buildProfileStatsFromOrders([], user));
+          setAchievements(buildAchievementsFromOrders([]));
+        }
+        showError(error.message || 'No se pudieron cargar las estadisticas del perfil');
+      }
+    };
+
+    loadProfileData();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, user]);
 
   const realName = user?.name || 'Usuario';
   const visibleAlias = user?.alias ? `@${user.alias}` : null;
@@ -71,20 +103,6 @@ export default function ProfileModal({ isOpen, onClose, user, onLogout, onUserUp
       setAliasSaving(false);
     }
   }
-
-  const userStats = {
-    totalOrders: 24,
-    favoriteProduct: "Café con leche",
-    totalSpent: 127.50,
-    memberSince: "2025-12-01"
-  };
-
-  const achievements = [
-    { id: 1, name: "Primer pedido", icon: "🎉", unlocked: true },
-    { id: 2, name: "Coffee lover", icon: "☕", unlocked: true },
-    { id: 3, name: "Fiel cliente", icon: "⭐", unlocked: true },
-    { id: 4, name: "Eco-friendly", icon: "🌱", unlocked: false }
-  ];
 
   if (!isOpen) return null;
 
@@ -189,23 +207,23 @@ export default function ProfileModal({ isOpen, onClose, user, onLogout, onUserUp
             {activeTab === 'stats' && (
               <div className="stats-tab">
                 <div className="stat-card">
-                  <div className="stat-icon">📊</div>
+                    <div className="stat-icon">📊</div>
                   <div className="stat-info">
-                    <div className="stat-value">{userStats.totalOrders}</div>
+                    <div className="stat-value">{profileStats.totalOrders}</div>
                     <div className="stat-label">Pedidos realizados</div>
                   </div>
                 </div>
                 <div className="stat-card">
                   <div className="stat-icon">☕</div>
                   <div className="stat-info">
-                    <div className="stat-value">{userStats.favoriteProduct}</div>
+                    <div className="stat-value">{profileStats.favoriteProduct}</div>
                     <div className="stat-label">Producto favorito</div>
                   </div>
                 </div>
                 <div className="stat-card">
                   <div className="stat-icon">💰</div>
                   <div className="stat-info">
-                    <div className="stat-value">{userStats.totalSpent.toFixed(2)} €</div>
+                    <div className="stat-value">{profileStats.totalSpent.toFixed(2)} €</div>
                     <div className="stat-label">Total gastado</div>
                   </div>
                 </div>

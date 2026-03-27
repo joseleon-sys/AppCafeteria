@@ -122,19 +122,20 @@ function buildTechnicalSheet(product) {
 
 async function ensureSchema() {
   const statements = [
-    `ALTER TABLE menu_items ADD COLUMN IF NOT EXISTS image_url TEXT`,
-    `ALTER TABLE menu_items ADD COLUMN IF NOT EXISTS badges JSONB DEFAULT '[]'::jsonb`,
-    `ALTER TABLE menu_items ADD COLUMN IF NOT EXISTS allergens JSONB DEFAULT '[]'::jsonb`,
-    `ALTER TABLE menu_items ADD COLUMN IF NOT EXISTS options JSONB DEFAULT '{}'::jsonb`,
-    `ALTER TABLE menu_items ADD COLUMN IF NOT EXISTS ingredients JSONB DEFAULT '[]'::jsonb`,
-    `ALTER TABLE menu_items ADD COLUMN IF NOT EXISTS contains_info TEXT DEFAULT ''`,
-    `ALTER TABLE menu_items ADD COLUMN IF NOT EXISTS conservation TEXT DEFAULT 'Conservar refrigerado entre 0ºC y 4ºC'`,
-    `ALTER TABLE menu_items ADD COLUMN IF NOT EXISTS shelf_life_hours INT DEFAULT 24`,
-    `ALTER TABLE menu_items ADD COLUMN IF NOT EXISTS calories_kcal INT DEFAULT 0`,
-    `ALTER TABLE menu_items ADD COLUMN IF NOT EXISTS nutrition_table JSONB DEFAULT '{}'::jsonb`,
-    `ALTER TABLE menu_items ADD COLUMN IF NOT EXISTS sanitary_approved BOOLEAN DEFAULT true`,
-    `ALTER TABLE menu_items ADD COLUMN IF NOT EXISTS sanitary_notes TEXT DEFAULT ''`,
-    `ALTER TABLE menu_items ADD COLUMN IF NOT EXISTS approved_at TIMESTAMP`
+    `ALTER TABLE productos_menu ADD COLUMN IF NOT EXISTS category TEXT DEFAULT 'cafes'`,
+    `ALTER TABLE productos_menu ADD COLUMN IF NOT EXISTS description TEXT DEFAULT ''`,
+    `ALTER TABLE productos_menu ADD COLUMN IF NOT EXISTS image_url TEXT`,
+    `ALTER TABLE productos_menu ADD COLUMN IF NOT EXISTS badges JSONB DEFAULT '[]'::jsonb`,
+    `ALTER TABLE productos_menu ADD COLUMN IF NOT EXISTS options JSONB DEFAULT '{}'::jsonb`,
+    `ALTER TABLE productos_menu ADD COLUMN IF NOT EXISTS ingredients JSONB DEFAULT '[]'::jsonb`,
+    `ALTER TABLE productos_menu ADD COLUMN IF NOT EXISTS contains_info TEXT DEFAULT ''`,
+    `ALTER TABLE productos_menu ADD COLUMN IF NOT EXISTS conservation TEXT DEFAULT 'Conservar refrigerado entre 0ºC y 4ºC'`,
+    `ALTER TABLE productos_menu ADD COLUMN IF NOT EXISTS shelf_life_hours INT DEFAULT 24`,
+    `ALTER TABLE productos_menu ADD COLUMN IF NOT EXISTS calories_kcal INT DEFAULT 0`,
+    `ALTER TABLE productos_menu ADD COLUMN IF NOT EXISTS nutrition_table JSONB DEFAULT '{}'::jsonb`,
+    `ALTER TABLE productos_menu ADD COLUMN IF NOT EXISTS sanitary_approved BOOLEAN DEFAULT true`,
+    `ALTER TABLE productos_menu ADD COLUMN IF NOT EXISTS sanitary_notes TEXT DEFAULT ''`,
+    `ALTER TABLE productos_menu ADD COLUMN IF NOT EXISTS approved_at TIMESTAMP`
   ];
 
   for (const statement of statements) {
@@ -146,15 +147,15 @@ async function loadProducts() {
   try {
     await ensureSchema();
     console.log('🔄 Limpiando productos existentes...');
-    await pool.query('DELETE FROM menu_items');
+    await pool.query('DELETE FROM productos_menu');
     
     console.log('📦 Cargando 26 productos...');
     for (const product of products) {
       const technical = buildTechnicalSheet(product);
       await pool.query(
-        `INSERT INTO menu_items (
-          name, description, price, category, active,
-          image_url, badges, allergens, options,
+        `INSERT INTO productos_menu (
+          nombre, description, precio, category, activo,
+          image_url, badges, alergenos, options,
           ingredients, contains_info, conservation, shelf_life_hours,
           calories_kcal, nutrition_table, sanitary_approved, sanitary_notes, approved_at
         ) VALUES (
@@ -186,7 +187,7 @@ async function loadProducts() {
       );
     }
     
-    const result = await pool.query('SELECT COUNT(*) FROM menu_items');
+    const result = await pool.query('SELECT COUNT(*) FROM productos_menu');
     console.log(`✅ ${result.rows[0].count} productos cargados correctamente`);
     
     process.exit(0);

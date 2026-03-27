@@ -96,11 +96,20 @@ export async function createOrder(orderData) {
   return apiRequest('/api/orders', {
     method: 'POST',
     body: JSON.stringify(orderData),
-  }, { contentType: true });
+  }, { auth: true, contentType: true });
 }
 
 export async function getOrder(id) {
-  return apiRequest(`/api/orders/${id}`);
+  return apiRequest(`/api/orders/${id}`, {}, { auth: true });
+}
+
+export async function getMyOrders(status = null, limit = 50) {
+  const params = new URLSearchParams();
+  if (status) params.append('status', status);
+  if (limit) params.append('limit', String(limit));
+
+  const suffix = params.toString() ? `?${params.toString()}` : '';
+  return apiRequest(`/api/orders/my${suffix}`, {}, { auth: true });
 }
 
 export async function healthCheck() {
@@ -218,6 +227,10 @@ export async function getAdminStatistics() {
   return apiRequest('/api/admin/statistics', {}, { auth: true });
 }
 
+export async function getAdminOrderQueue() {
+  return apiRequest('/api/admin/orders/queue', {}, { auth: true });
+}
+
 export async function getFraudLog() {
   return apiRequest('/api/admin/fraud-log', {}, { auth: true });
 }
@@ -257,6 +270,7 @@ export default {
   deleteProduct,
   createOrder,
   getOrder,
+  getMyOrders,
   healthCheck,
   updateProfileAlias,
   getCurrentUser,
@@ -275,6 +289,7 @@ export default {
   markOrderAsPaid,
   getOrderHistory,
   getAdminStatistics,
+  getAdminOrderQueue,
   getFraudLog,
   getAllUsers,
   blockUser,

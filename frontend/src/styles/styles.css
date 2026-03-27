@@ -709,14 +709,6 @@ body.no-scroll {
 .menu-item:hover {
   background: rgba(0, 0, 0, 0.05);
 }
-  background: linear-gradient(135deg, var(--primary), var(--primary-light));
-  color: var(--text-inverse);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: 600;
-  font-size: 22px;
-}
 
 .profile-name {
   font-weight: 600;

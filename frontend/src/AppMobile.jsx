@@ -142,12 +142,12 @@ export default function AppMobile() {
           <CartModal 
             isOpen={showCart} 
             onClose={() => setShowCart(false)} 
-            onShowSpinner={() => setShowSpinner(true)}
             user={user}
           />
           <HistoryModal 
             isOpen={showHistory} 
             onClose={() => setShowHistory(false)} 
+            user={user}
           />
           <ProfileModal 
             isOpen={showProfile} 

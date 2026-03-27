@@ -12,6 +12,7 @@ dotenv.config({ path: path.join(__dirname, '../../.env'), override: false });
 const supabaseUrl = (process.env.SUPABASE_URL || '').trim();
 const supabaseServiceKey = (
   process.env.SUPABASE_SERVICE_ROLE_KEY ||
+  process.env.SUPABASE_SECRET_KEY ||
   process.env.SUPABASE_SERVICE_KEY ||
   ''
 ).trim();
@@ -87,7 +88,7 @@ async function setupDatabase() {
 
     // Primero, eliminar productos existentes para limpiar
     const { error: deleteError } = await supabase
-      .from('products')
+      .from('productos_menu')
       .delete()
       .neq('id', 0);
 
@@ -97,13 +98,18 @@ async function setupDatabase() {
 
     // Insertar nuevos productos
     const { data, error } = await supabase
-      .from('products')
-      .insert(products)
+      .from('productos_menu')
+      .insert(products.map((product) => ({
+        nombre: product.name,
+        precio: product.price,
+        activo: product.active,
+        alergenos: product.allergens
+      })))
       .select();
 
     if (error) {
       console.error('❌ Error al insertar productos:', error);
-      console.log('💡 Asegúrate de que la tabla "products" existe en Supabase');
+      console.log('💡 Asegúrate de que la tabla "productos_menu" existe en Supabase');
       process.exit(1);
     }
 
