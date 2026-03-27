@@ -1,0 +1,142 @@
+# Frontend - CafeteriaSSG
+
+Aplicación móvil/web con Ionic React para la cafetería.
+
+## Requisitos
+
+- Node.js 18+ (recomendado LTS)
+- npm o pnpm
+
+## Instalar dependencias
+
+Desde la carpeta `frontend/`:
+
+```powershell
+cd frontend
+npm install
+```
+
+## Ejecutar en modo desarrollo
+
+```powershell
+npm run dev
+```
+
+La aplicación arranca en [http://localhost:5173](http://localhost:5173) (Vite default).
+
+## Ejecutar como aplicación Ionic (con recarga en vivo)
+
+```powershell
+ionic serve
+```
+
+## Variables de entorno
+
+Crea un archivo `.env` en la carpeta `frontend/` con:
+
+```env
+VITE_API_URL=http://localhost:3000
+```
+
+Ejemplo de uso en React:
+
+```javascript
+const API_URL = import.meta.env.VITE_API_URL;
+
+const response = await fetch(`${API_URL}/api/menu`);
+const data = await response.json();
+```
+
+## Estructura del frontend
+
+```
+frontend/
+├── src/
+│   ├── pages/          # Páginas/pantallas (Home, Menu, Order, Profile)
+│   ├── components/     # Componentes reutilizables (Button, Header, Card)
+│   ├── hooks/          # Hooks personalizados (useMenu, useOrders)
+│   ├── lib/            # Utilidades (axios config, helpers)
+│   ├── styles/         # Estilos globales y variables
+│   ├── App.jsx         # Componente principal
+│   └── main.jsx        # Punto de entrada
+├── public/             # Assets estáticos
+├── index.html
+├── package.json
+└── README.md           # Este archivo
+```
+
+## Conectar con el backend
+
+El frontend consume la API REST del backend (por defecto en `http://localhost:3000`).
+
+Ejemplo de llamada GET:
+
+```javascript
+const fetchMenu = async () => {
+  try {
+    const response = await fetch('http://localhost:3000/api/menu');
+    const { data } = await response.json();
+    console.log(data);
+  } catch (error) {
+    console.error('Error al obtener menú:', error);
+  }
+};
+```
+
+Ejemplo de llamada POST (crear orden):
+
+```javascript
+const createOrder = async (orderData) => {
+  try {
+    const response = await fetch('http://localhost:3000/api/orders', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(orderData),
+    });
+    const result = await response.json();
+    console.log('Orden creada:', result);
+  } catch (error) {
+    console.error('Error al crear orden:', error);
+  }
+};
+```
+
+## Build para producción
+
+```powershell
+npm run build
+```
+
+Los archivos estáticos se generan en `dist/`.
+
+## Ionic build para dispositivos
+
+Para Android:
+
+```powershell
+ionic capacitor add android
+ionic capacitor sync
+ionic capacitor run android
+```
+
+Para iOS (requiere macOS y Xcode):
+
+```powershell
+ionic capacitor add ios
+ionic capacitor sync
+ionic capacitor open ios
+```
+
+## Buenas prácticas
+
+- Usar variables de entorno (VITE_*) para URLs y configuraciones.
+- Validar inputs antes de enviar al backend.
+- Manejar errores de red con feedback visual.
+- Usar hooks personalizados para encapsular lógica (useMenu, useOrders).
+- Componentizar la UI (evitar duplicar código).
+
+## Recursos
+
+- [Ionic React Docs](https://ionicframework.com/docs/react)
+- [Vite](https://vitejs.dev/)
+- [React](https://react.dev/)

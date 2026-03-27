@@ -1,0 +1,272 @@
+/* ============================================
+   CART PREVIEW STYLES
+   ============================================ */
+
+.cart-preview {
+  min-height: 100vh;
+  background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+  padding: 20px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', 'Roboto', sans-serif;
+}
+
+/* ============================================
+   HEADER
+   ============================================ */
+.preview-header {
+  text-align: center;
+  margin-bottom: 30px;
+  padding: 20px;
+  background: white;
+  border-radius: 16px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.preview-header h1 {
+  font-size: 2rem;
+  color: #6b4226;
+  margin: 0 0 8px 0;
+  font-weight: 800;
+}
+
+.preview-header p {
+  color: #6c757d;
+  font-size: 1.1rem;
+  margin: 0;
+}
+
+/* ============================================
+   CONTROLS
+   ============================================ */
+.preview-controls {
+  display: flex;
+  justify-content: center;
+  gap: 16px;
+  margin-bottom: 30px;
+}
+
+.control-btn {
+  padding: 12px 24px;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.control-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+}
+
+.control-btn.reset {
+  background: #17a2b8;
+  color: white;
+}
+
+.control-btn.reset:hover {
+  background: #138496;
+}
+
+.control-btn.clear {
+  background: #dc3545;
+  color: white;
+}
+
+.control-btn.clear:hover {
+  background: #c82333;
+}
+
+/* ============================================
+   PREVIEW CONTENT
+   ============================================ */
+.preview-content {
+  display: grid;
+  grid-template-columns: 1fr 300px;
+  gap: 30px;
+  align-items: start;
+}
+
+.cart-demo {
+  display: flex;
+  justify-content: center;
+}
+
+/* ============================================
+   INFO SIDEBAR
+   ============================================ */
+.preview-info {
+  background: white;
+  border-radius: 16px;
+  padding: 24px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  height: fit-content;
+}
+
+.info-section {
+  margin-bottom: 24px;
+}
+
+.info-section:last-child {
+  margin-bottom: 0;
+}
+
+.info-section h3 {
+  font-size: 16px;
+  color: #6b4226;
+  margin: 0 0 12px 0;
+  font-weight: 700;
+}
+
+.info-section ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.info-section li {
+  padding: 6px 0;
+  color: #495057;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.info-section code {
+  background: #f8f9fa;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: 'Monaco', 'Menlo', monospace;
+  font-size: 13px;
+  color: #e83e8c;
+  font-weight: 600;
+}
+
+.info-section p {
+  color: #6c757d;
+  font-size: 14px;
+  line-height: 1.5;
+  margin: 0;
+}
+
+/* ============================================
+   NOTIFICATION MESSAGES
+   ============================================ */
+.messages-container {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 350px;
+}
+
+.message {
+  padding: 12px 16px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  animation: slideIn 0.3s ease;
+  color: white;
+}
+
+.message.success {
+  background: #28a745;
+}
+
+.message.error {
+  background: #dc3545;
+}
+
+.message.warning {
+  background: #ffc107;
+  color: #212529;
+}
+
+.message.info {
+  background: #17a2b8;
+}
+
+@keyframes slideIn {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+/* ============================================
+   RESPONSIVE
+   ============================================ */
+@media (max-width: 1024px) {
+  .preview-content {
+    grid-template-columns: 1fr;
+    gap: 20px;
+  }
+  
+  .preview-info {
+    order: -1;
+  }
+}
+
+@media (max-width: 768px) {
+  .cart-preview {
+    padding: 10px;
+  }
+  
+  .preview-header {
+    padding: 16px;
+    margin-bottom: 20px;
+  }
+  
+  .preview-header h1 {
+    font-size: 1.5rem;
+  }
+  
+  .preview-controls {
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+  }
+  
+  .control-btn {
+    width: 100%;
+    max-width: 200px;
+  }
+  
+  .preview-info {
+    padding: 16px;
+  }
+  
+  .messages-container {
+    top: 10px;
+    right: 10px;
+    left: 10px;
+    max-width: none;
+  }
+}
+
+@media (max-width: 480px) {
+  .preview-header h1 {
+    font-size: 1.25rem;
+  }
+  
+  .preview-header p {
+    font-size: 1rem;
+  }
+  
+  .info-section h3 {
+    font-size: 14px;
+  }
+  
+  .info-section li,
+  .info-section p {
+    font-size: 13px;
+  }
+}

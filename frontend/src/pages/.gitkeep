@@ -1,0 +1,2 @@
+Carpeta de páginas/pantallas (ej: Home, Menu, Pedido, Perfil).
+Cada archivo puede exportar una React component por página.

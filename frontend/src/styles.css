@@ -1,0 +1,235 @@
+/* Archivo de estilos globales para CafeteriaAppSSG */
+
+/* Ajustes para el nuevo layout */
+#products.products-grid {
+  padding-top: 150px !important; /* Adjusted for new layout */
+  position: relative;
+  z-index: 10;
+  margin-top: 0;
+}
+
+.content {
+  padding-top: 0 !important;
+  margin-top: 0;
+  padding-bottom: 80px; /* Solo espacio para el bottom nav */
+}
+
+/* Search Container */
+.search-container {
+  position: fixed;
+  top: 72px;
+  left: 0;
+  right: 0;
+  background: white;
+  padding: 12px 16px;
+  border-bottom: 1px solid #e2e8f0;
+  z-index: 95;
+}
+
+.search-wrapper {
+  position: relative;
+  max-width: 600px;
+  margin: 0 auto;
+}
+
+.search-input {
+  width: 100%;
+  padding: 12px 40px 12px 40px;
+  border: 2px solid #e2e8f0;
+  border-radius: 24px;
+  font-size: 16px;
+  background: #f8f9fa;
+  transition: all 0.3s ease;
+}
+
+.search-input:focus {
+  outline: none;
+  border-color: #b08968;
+  background: white;
+  box-shadow: 0 0 0 3px rgba(176, 137, 104, 0.1);
+}
+
+.search-icon {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #718096;
+  pointer-events: none;
+}
+
+.clear-search {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  color: #718096;
+  font-size: 16px;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 50%;
+  transition: all 0.3s ease;
+}
+
+.clear-search:hover {
+  background: #f1f3f4;
+  color: #4a5568;
+}
+
+/* Estado de no productos */
+.no-products {
+  grid-column: 1 / -1;
+  text-align: center;
+  padding: 60px 20px;
+  color: #6c757d;
+}
+
+.no-products-icon {
+  font-size: 64px;
+  margin-bottom: 16px;
+  opacity: 0.3;
+}
+
+.no-products h3 {
+  margin: 0 0 8px 0;
+  font-size: 18px;
+  color: #495057;
+}
+
+.no-products p {
+  margin: 0;
+  font-size: 14px;
+}
+
+/* Asegurar que categorías estén siempre arriba */
+.categories-container {
+  z-index: 90 !important;
+  top: 60px !important;
+  padding: 9px 0 !important;
+}
+
+  .app-header {
+    z-index: 100 !important;
+  }
+
+.app-header .title img {
+  display: block !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  max-width: none !important;
+  width: auto !important;
+  height: 48px !important;
+  object-fit: contain !important;
+}
+
+.app-header .title {
+  display: flex !important;
+  align-items: center !important;
+  gap: 12px !important;
+}
+
+/* Solo ocultar el coffee-icon específico, no todos los SVG */
+.app-header .title .coffee-icon {
+  display: none !important;
+}
+
+.app-header .title svg.coffee-icon {
+  display: none !important;
+}
+
+/* Productos no deben superponerse */
+.product-card {
+  position: relative;
+  z-index: 1;
+  background: white;
+  border-radius: 16px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+}
+
+/* Bottom nav sin espacios extra */
+.bottom-nav {
+  margin-top: 0;
+  margin-bottom: 0;
+}
+
+/* Modales en el nivel más alto */
+.modal-overlay,
+.cart-modal-overlay,
+.history-modal-overlay,
+.profile-modal-overlay {
+  z-index: 1000 !important;
+}
+
+/* Loading Modal Styles */
+.loading-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1200;
+  animation: fadeIn 0.2s ease;
+}
+
+.loading-modal {
+  background: white;
+  border-radius: 20px;
+  padding: 40px 32px;
+  text-align: center;
+  box-shadow: 0 10px 50px rgba(0, 0, 0, 0.2);
+  animation: slideUp 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  max-width: 300px;
+  width: 90%;
+}
+
+.loading-modal-close {
+  margin-top: 24px;
+  padding: 11px 20px;
+  background: linear-gradient(135deg, #6b4226 0%, #8b5a3c 100%);
+  color: white;
+  border: none;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-family: inherit;
+}
+
+.loading-modal-close:hover {
+  box-shadow: 0 4px 12px rgba(107, 66, 38, 0.3);
+  transform: translateY(-1px);
+}
+
+.loading-modal-close:active {
+  transform: translateY(0);
+  box-shadow: 0 2px 8px rgba(107, 66, 38, 0.2);
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes slideUp {
+  from {
+    transform: translateY(20px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+/* Puedes agregar aquí estilos globales adicionales si lo necesitas */

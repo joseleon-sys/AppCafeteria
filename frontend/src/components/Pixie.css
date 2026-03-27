@@ -1,0 +1,42 @@
+.pixie-container {
+  position: fixed;
+  bottom: 40px;
+  right: 32px;
+  z-index: 1200;
+  pointer-events: none;
+}
+
+.pixie-fairy {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  animation: pixie-float 3s ease-in-out infinite alternate;
+  filter: drop-shadow(0 4px 16px #b0896822);
+  pointer-events: auto;
+}
+
+@keyframes pixie-float {
+  0% { transform: translateY(0) scale(1); }
+  50% { transform: translateY(-18px) scale(1.05); }
+  100% { transform: translateY(0) scale(1); }
+}
+
+.pixie-message {
+  margin-top: 8px;
+  background: linear-gradient(90deg, #fffbe6 80%, #ffe6fa 100%);
+  color: #6b4226;
+  font-weight: 700;
+  font-size: 1.1rem;
+  border-radius: 16px;
+  box-shadow: 0 2px 8px #b0896822;
+  padding: 8px 18px;
+  border: 1.5px solid #b08968;
+  white-space: nowrap;
+  animation: pixie-msg-fade 2.5s ease-in-out infinite alternate;
+}
+
+@keyframes pixie-msg-fade {
+  0% { opacity: 0.7; }
+  50% { opacity: 1; }
+  100% { opacity: 0.7; }
+}

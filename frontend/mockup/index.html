@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CafeteriaApp — Mockup Funcional</title>
+
+  <!-- Styles -->
+  <link rel="stylesheet" href="styles.css">
+
+  <!-- Theme color for mobile browsers -->
+  <meta name="theme-color" content="#1a1a2e">
+  <meta name="description" content="Prototipo funcional de CafeteriaApp - Sistema de pedidos para cafetería">
+</head>
+
+<body>
+  <!-- ============================================
+       OVERLAY (para modales y menú lateral)
+       ============================================ -->
+  <div id="overlay" class="overlay hidden" aria-hidden="true"></div>
+
+  <!-- ============================================
+       TOAST (notificaciones temporales)
+       ============================================ -->
+  <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
+
+  <!-- ============================================
+       PANTALLA DE LOGIN
+       ============================================ -->
+  <main id="login-screen" class="screen" role="main">
+    <div class="card login-card">
+      <h1>CafeteriaApp</h1>
+      <p class="subtitle">Bienvenido — inicia sesión o crea una cuenta</p>
+
+      <form id="login-form" aria-label="Formulario de inicio de sesión">
+        <label for="login-username" class="sr-only">Usuario</label>
+        <input id="login-username" type="text" placeholder="Usuario" autocomplete="username" required
+          aria-required="true">
+
+        <label for="login-password" class="sr-only">Contraseña</label>
+        <input id="login-password" type="password" placeholder="Contraseña" autocomplete="current-password" required
+          aria-required="true">
+
+        <div class="button-row">
+          <button type="submit" class="btn btn-primary">Entrar</button>
+          <button type="button" id="signup-btn" class="btn btn-outline">Crear cuenta</button>
+        </div>
+
+        <p class="demo-hint muted">
+          Usuario demo: <strong>demo</strong> / Contraseña: <strong>demo</strong>
+        </p>
+      </form>
+    </div>
+  </main>
+
+
+
+  <!-- ============================================
+       PANTALLA PRINCIPAL (después de login)
+       ============================================ -->
+  <main id="main-screen" class="screen hidden" role="main">
+
+    <!-- HEADER PRINCIPAL -->
+    <header class="app-header">
+      <button id="hamburger" class="icon-btn" aria-label="Abrir menú lateral" aria-expanded="false"
+        aria-controls="side-menu">
+        <span class="hamburger-icon"></span>
+      </button>
+
+      <div class="header-title">
+        <!-- Icono de café SVG -->
+        <svg class="coffee-icon" viewBox="0 0 64 64" width="28" height="28" aria-hidden="true">
+          <path fill="currentColor" d="M8 18h40v6a12 12 0 0 1-12 12H20a12 12 0 0 1-12-12v-6z" />
+          <path fill="currentColor" d="M20 46h16v4H20z" />
+          <path fill="currentColor" d="M48 20a6 6 0 0 1 0 12h-2v-12z" />
+        </svg>
+        <span class="app-name">CafeteriaApp</span>
+      </div>
+
+      <button id="logout-btn" class="btn btn-icon" title="Cerrar sesión" aria-label="Cerrar sesión">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M14 8l4 4-4 4M18 12H9M15 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10" stroke="currentColor"
+            stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+      </button>
+    </header>
+
+    <!-- BARRA SUPERIOR: búsqueda -->
+    <div class="top-bar">
+      <div class="search-wrapper">
+        <label for="search-input" class="sr-only">Buscar productos</label>
+        <input id="search-input" class="search-input" type="search" placeholder="Buscar café, bebida o snack..."
+          aria-label="Buscar productos" />
+        <button id="filter-btn" class="btn-filter" aria-label="Abrir filtros">
+          ☰
+        </button>
+      </div>
+    </div>
+
+    <!-- MENÚ LATERAL (drawer izquierda) -->
+    <nav id="side-menu" class="side-menu hidden" aria-label="Menú principal" aria-hidden="true">
+      <div class="menu-header">
+        <div class="avatar" aria-hidden="true">C</div>
+        <div class="profile-info">
+          <div id="menu-username" class="profile-name">Invitado</div>
+          <div class="profile-subtitle muted">Mi cuenta</div>
+        </div>
+      </div>
+
+      <ul class="menu-list" role="list">
+        <li><button class="menu-item" type="button">👤 Perfil</button></li>
+        <li><button class="menu-item" type="button">🪑 Mesas</button></li>
+        <li><button class="menu-item" type="button">⭐ Favoritos</button></li>
+        <li>
+          <hr style="margin: 12px 0; border: none; border-top: 1px solid #f4f4f5;">
+        </li>
+        <li><button id="logout-menu-btn" class="menu-item" type="button">🚪 Cerrar sesión</button></li>
+        <li><button id="delete-account" class="menu-item menu-item-danger" type="button">🗑️ Eliminar cuenta</button>
+        </li>
+      </ul>
+    </nav>
+
+    <!-- CATEGORÍAS (scroll horizontal) -->
+    <div class="categories-container">
+      <div id="categories" class="categories" role="tablist" aria-label="Categorías de productos">
+        <!-- Las categorías se inyectan dinámicamente con JS -->
+      </div>
+    </div>
+
+    <!-- CONTENIDO PRINCIPAL: lista de productos -->
+    <section class="content">
+      <div id="products" class="products-grid">
+        <p class="muted">Selecciona una categoría para ver productos</p>
+      </div>
+    </section>
+
+    <!-- DRAWER LATERAL DERECHO: personalizar producto -->
+    <aside id="product-drawer" class="drawer drawer-right hidden" role="dialog" aria-modal="true"
+      aria-labelledby="drawer-title" aria-hidden="true">
+      <div class="drawer-header">
+        <button id="drawer-close" class="icon-btn" aria-label="Cerrar">✕</button>
+        <h3 id="drawer-title">Personalizar producto</h3>
+      </div>
+
+      <div id="drawer-body" class="drawer-body">
+        <!-- Opciones de personalización inyectadas por JS -->
+      </div>
+
+      <div class="drawer-footer">
+        <button id="add-to-cart-btn" class="btn btn-primary btn-block">
+          Añadir al carrito
+        </button>
+      </div>
+    </aside>
+
+    <!-- MODAL DEL CARRITO -->
+    <div id="cart-modal" class="modal cart-modal hidden" role="dialog" aria-modal="true" aria-labelledby="cart-title"
+      aria-hidden="true">
+      <div class="modal-header">
+        <h3 id="cart-title">🛒 Tu pedido</h3>
+        <button id="close-cart-btn" class="icon-btn" aria-label="Cerrar carrito">✕</button>
+      </div>
+
+      <div id="cart-body" class="modal-body">
+        <p class="muted">Carrito vacío</p>
+      </div>
+
+      <div class="modal-footer">
+        <div class="cart-total">
+          <span>Total:</span>
+          <strong id="cart-total-amount">0.00 €</strong>
+        </div>
+        <div class="button-row">
+          <button id="clear-cart-btn" class="btn btn-outline btn-sm">Vaciar</button>
+          <button id="continue-order-btn" class="btn btn-outline btn-sm">Continuar →</button>
+          <button id="pay-btn" class="btn btn-primary btn-sm">Pagar</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- PANTALLA DE CONFIRMACIÓN DE PEDIDO -->
+    <div id="order-confirmation-screen" class="order-confirmation-screen hidden">
+      <div class="order-header">
+        <div class="order-header-left">
+          <button class="order-back-btn" aria-label="Volver">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M19 12H5M12 19l-7-7 7-7" />
+            </svg>
+          </button>
+          <h2>Pedido confirmado</h2>
+        </div>
+      </div>
+
+      <div class="order-hero">
+        <h1 class="order-restaurant-name">Cafetería SSG</h1>
+      </div>
+
+      <div class="order-content">
+        <div class="order-status-card">
+          <div class="order-status-icon">✌️</div>
+          <h3>Entregado</h3>
+          <p class="order-date">Hace 5 minutos</p>
+          <p class="order-id">Pedido CAFE001</p>
+        </div>
+
+        <div class="order-alert">
+          <span class="order-alert-icon">ℹ️</span>
+          <div>
+            <p class="order-alert-text">Puede tardar hasta 7 días en hacerse efectivo.</p>
+          </div>
+        </div>
+
+        <section class="order-section">
+          <h3>Tu pedido</h3>
+          <div class="order-items-list">
+            <!-- Items inyectados por JS -->
+          </div>
+        </section>
+
+        <section class="delivery-details">
+          <h3>Detalles de la entrega</h3>
+          <div class="delivery-info">
+            <span class="delivery-icon">📍</span>
+            <div class="delivery-text">
+              <p class="delivery-type">Recogida en mostrador</p>
+              <p class="delivery-location">Cafetería - Campus Principal</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="order-summary">
+          <h3>Resumen</h3>
+          <div class="summary-row">
+            <span class="summary-label">Subtotal</span>
+            <span class="summary-value">0.00 €</span>
+          </div>
+          <div class="summary-row">
+            <span class="summary-label">Servicios</span>
+            <span class="summary-value">0.00 €</span>
+          </div>
+          <div class="summary-row total">
+            <span class="summary-label">Total</span>
+            <span class="summary-value">0.00 €</span>
+          </div>
+          <div class="payment-method">
+            <span class="payment-method-icon">💳</span>
+            <span class="payment-method-text">Tarjeta de crédito</span>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <!-- PANTALLA DE HISTORIAL DE PEDIDOS -->
+    <div id="orders-history-screen" class="orders-history-screen hidden">
+      <div class="order-header">
+        <div class="order-header-left">
+          <button class="order-back-btn" aria-label="Volver">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M19 12H5M12 19l-7-7 7-7" />
+            </svg>
+          </button>
+          <h2>Historial de pedidos</h2>
+        </div>
+      </div>
+
+      <div class="history-content">
+        <!-- Pedidos inyectados por JS -->
+      </div>
+    </div>
+
+    <!-- NAVEGACIÓN INFERIOR (bottom nav) -->
+    <nav class="bottom-nav" aria-label="Navegación principal">
+      <button class="nav-btn" id="nav-home" aria-label="Promociones">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <path
+            d="M12 8v13m0-13V6a2 2 0 112 2h-2zm0 0V5.5A2.5 2.5 0 109.5 8H12zm-7 4h14M5 12a2 2 0 110-4h14a2 2 0 110 4M5 12v7a2 2 0 002 2h10a2 2 0 002-2v-7" />
+        </svg>
+        <span>Promos</span>
+      </button>
+
+      <button class="nav-btn" id="nav-orders" aria-label="Ver historial">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <circle cx="12" cy="12" r="9" />
+          <path d="M12 7v5l3 3" />
+        </svg>
+        <span>Historial</span>
+      </button>
+
+      <button class="nav-btn-central" id="nav-cart" aria-label="Ver carrito">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4" />
+          <line x1="3" y1="6" x2="21" y2="6" />
+          <path d="M16 10a4 4 0 01-8 0" />
+        </svg>
+        <span id="cart-badge" class="cart-badge hidden">0</span>
+      </button>
+
+      <button class="nav-btn" id="nav-favorites" aria-label="Favoritos">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <path
+            d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
+        </svg>
+        <span>Favoritos</span>
+      </button>
+
+      <button class="nav-btn" id="nav-settings" aria-label="Perfil">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <circle cx="12" cy="12" r="3" />
+          <circle cx="12" cy="12" r="9" />
+        </svg>
+        <span>Perfil</span>
+      </button>
+    </nav>
+  </main>
+
+  <!-- SCRIPTS -->
+  <script src="app.js"></script>
+</body>
+
+</html>

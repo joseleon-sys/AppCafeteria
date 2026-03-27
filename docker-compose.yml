@@ -1,0 +1,43 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: cafeteria_db
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-cafeteria_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-cafeteria_pass}
+      POSTGRES_DB: ${POSTGRES_DB:-cafeteria_db}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./backend/db/init.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "5433:5432"
+    networks:
+      - cafeteria_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-cafeteria_user}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: cafeteria_pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL:-admin@example.com}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD:-admin}
+      PGADMIN_CONFIG_SERVER_MODE: 'False'
+    ports:
+      - "8081:80"
+    networks:
+      - cafeteria_network
+    depends_on:
+      - postgres
+
+volumes:
+  postgres_data:
+
+networks:
+  cafeteria_network:
+    driver: bridge

@@ -1,0 +1,3 @@
+Esta carpeta contiene el código fuente `src/`.
+Añade subcarpetas: `components/`, `pages/`, `lib/`, `hooks/`, `styles/`.
+Este archivo es un placeholder para que Git incluya la estructura inicial.

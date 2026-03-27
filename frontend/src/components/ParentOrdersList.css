@@ -1,0 +1,258 @@
+.parent-orders-list {
+  padding: 20px;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.parent-orders-list.loading {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 300px;
+}
+
+.spinner {
+  font-size: 1.2em;
+  color: #666;
+}
+
+.orders-header {
+  margin-bottom: 30px;
+}
+
+.orders-header h3 {
+  margin: 0 0 20px 0;
+  font-size: 1.6em;
+  color: #333;
+}
+
+.filters {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.filters button {
+  padding: 10px 20px;
+  border: 2px solid #ddd;
+  background: white;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 500;
+  transition: all 0.2s;
+}
+
+.filters button:hover {
+  border-color: #667eea;
+  color: #667eea;
+}
+
+.filters button.active {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border-color: #667eea;
+}
+
+.no-orders {
+  text-align: center;
+  padding: 60px 20px;
+  background: #f9f9f9;
+  border-radius: 12px;
+  color: #666;
+}
+
+.no-orders p {
+  font-size: 1.2em;
+  margin: 0;
+}
+
+.orders-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 20px;
+}
+
+.order-card {
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  overflow: hidden;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.order-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+}
+
+.order-card-header {
+  padding: 15px;
+  background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.child-info {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.child-name {
+  font-weight: 600;
+  color: #2c3e50;
+  font-size: 1.1em;
+}
+
+.order-total {
+  font-size: 1.4em;
+  font-weight: 700;
+  color: #27ae60;
+}
+
+.status-badge {
+  display: inline-block;
+  padding: 4px 12px;
+  border-radius: 12px;
+  font-size: 0.85em;
+  font-weight: 600;
+}
+
+.status-pending {
+  background: #fff3cd;
+  color: #856404;
+}
+
+.status-approved {
+  background: #d4edda;
+  color: #155724;
+}
+
+.status-rejected {
+  background: #f8d7da;
+  color: #721c24;
+}
+
+.status-paid {
+  background: #d1ecf1;
+  color: #0c5460;
+}
+
+.order-card-body {
+  padding: 15px;
+}
+
+.order-card-body p {
+  margin: 8px 0;
+  font-size: 0.95em;
+  color: #666;
+}
+
+.order-date {
+  color: #999;
+  font-size: 0.9em;
+}
+
+.items-count {
+  font-weight: 500;
+  color: #555;
+}
+
+.order-notes {
+  font-style: italic;
+  background: #f9f9f9;
+  padding: 8px;
+  border-radius: 6px;
+  margin-top: 10px;
+  color: #555;
+}
+
+.order-card-actions {
+  padding: 15px;
+  border-top: 1px solid #eee;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.btn {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 500;
+  transition: all 0.2s;
+  font-size: 0.9em;
+}
+
+.btn-sm {
+  padding: 6px 12px;
+  font-size: 0.85em;
+}
+
+.btn-info {
+  background: #17a2b8;
+  color: white;
+}
+
+.btn-info:hover {
+  background: #138496;
+}
+
+.btn-success {
+  background: #28a745;
+  color: white;
+}
+
+.btn-success:hover {
+  background: #218838;
+}
+
+.btn-danger {
+  background: #dc3545;
+  color: white;
+}
+
+.btn-danger:hover {
+  background: #c82333;
+}
+
+.btn-primary {
+  background: #007bff;
+  color: white;
+}
+
+.btn-primary:hover {
+  background: #0069d9;
+}
+
+@media (max-width: 768px) {
+  .parent-orders-list {
+    padding: 10px;
+  }
+
+  .orders-grid {
+    grid-template-columns: 1fr;
+    gap: 15px;
+  }
+
+  .filters {
+    justify-content: center;
+  }
+
+  .filters button {
+    flex: 1;
+    min-width: 100px;
+  }
+
+  .order-card-header {
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .order-total {
+    font-size: 1.2em;
+  }
+}
