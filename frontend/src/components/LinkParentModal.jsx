@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import './LinkParentModal.css';
-
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+import { requestParentLink } from '../lib/api';
 
 export default function LinkParentModal({ isOpen, onClose }) {
   const [parentToken, setParentToken] = useState('');
@@ -16,23 +15,7 @@ export default function LinkParentModal({ isOpen, onClose }) {
     setLoading(true);
 
     try {
-      const token = localStorage.getItem('cafeteria_token');
-      const response = await fetch(`${API_URL}/api/child/link-parent`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ parentToken: parentToken.toUpperCase() })
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        setError(data.error || 'Error al enviar solicitud');
-        setLoading(false);
-        return;
-      }
+      const data = await requestParentLink(parentToken.toUpperCase());
 
       setSuccess(`Solicitud enviada a ${data.link.parentName}. Espera su aprobación.`);
       setParentToken('');
@@ -42,7 +25,7 @@ export default function LinkParentModal({ isOpen, onClose }) {
       }, 2000);
     } catch (err) {
       console.error('Error:', err);
-      setError('Error de conexión');
+      setError(err.message || 'Error de conexión');
     } finally {
       setLoading(false);
     }

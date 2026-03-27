@@ -1,5 +1,17 @@
 import React, { useEffect, useState } from "react";
-import { getAllProducts, createProduct, updateProduct, deleteProduct, getAllUsers, blockUser, updateUser, deleteUser } from "../lib/api";
+import {
+  getAllProducts,
+  createProduct,
+  updateProduct,
+  deleteProduct,
+  getAllUsers,
+  blockUser,
+  updateUser,
+  deleteUser,
+  getAdminStatistics,
+  getFraudLog,
+  getParentChildOrders
+} from "../lib/api";
 import "./AdminDashboard.css";
 
 const MENU_ITEMS = [
@@ -61,10 +73,7 @@ export default function AdminDashboard({ onLogout }) {
 
   const fetchStatistics = async () => {
     try {
-      const res = await fetch('http://localhost:3000/api/admin/statistics', {
-        headers: { 'Authorization': `Bearer ${localStorage.getItem('cafeteria_token')}` }
-      });
-      return res.ok ? res.json() : generateMockStats();
+      return await getAdminStatistics();
     } catch (err) {
       console.error('Error en estadísticas:', err);
       return generateMockStats();
@@ -73,10 +82,8 @@ export default function AdminDashboard({ onLogout }) {
 
   const fetchFraudLog = async () => {
     try {
-      const res = await fetch('http://localhost:3000/api/admin/fraud-log', {
-        headers: { 'Authorization': `Bearer ${localStorage.getItem('cafeteria_token')}` }
-      });
-      return res.ok ? res.json() : [];
+      const response = await getFraudLog();
+      return response.logs || [];
     } catch (err) {
       console.error('Error en fraude log:', err);
       return [];
@@ -85,17 +92,9 @@ export default function AdminDashboard({ onLogout }) {
 
   const fetchUsers = async () => {
     try {
-      const res = await fetch('http://localhost:3000/api/admin/users', {
-        headers: { 'Authorization': `Bearer ${localStorage.getItem('cafeteria_token')}` }
-      });
-      const data = await res.json();
+      const data = await getAllUsers();
       console.log('📥 Usuarios cargados:', data);
-      
-      if (!res.ok) {
-        console.error('Error al cargar usuarios:', data.error);
-        return [];
-      }
-      
+
       return data.users || [];
     } catch (err) {
       console.error('Error en usuarios:', err);
@@ -105,10 +104,8 @@ export default function AdminDashboard({ onLogout }) {
 
   const fetchOrders = async () => {
     try {
-      const res = await fetch('http://localhost:3000/api/parent/child-orders', {
-        headers: { 'Authorization': `Bearer ${localStorage.getItem('cafeteria_token')}` }
-      });
-      return res.ok ? (await res.json()).orders || [] : [];
+      const data = await getParentChildOrders({ limit: 50 });
+      return data.orders || [];
     } catch (err) {
       console.error('Error en órdenes:', err);
       return [];
@@ -178,25 +175,12 @@ export default function AdminDashboard({ onLogout }) {
 
   const handleBlockUser = async (userId, shouldBlock) => {
     try {
-      const res = await fetch(`http://localhost:3000/api/admin/users/${userId}/block`, {
-        method: 'PUT',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('cafeteria_token')}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ blocked: shouldBlock })
-      });
-
-      if (res.ok) {
-        await loadDashboardData();
-        setBlockingUser(null);
-      } else {
-        const error = await res.json();
-        alert(`Error: ${error.error}`);
-      }
+      await blockUser(userId, shouldBlock);
+      await loadDashboardData();
+      setBlockingUser(null);
     } catch (error) {
       console.error('Error al bloquear usuario:', error);
-      alert('Error al procesar la solicitud');
+      alert(error.message || 'Error al procesar la solicitud');
     }
   };
 
@@ -216,30 +200,17 @@ export default function AdminDashboard({ onLogout }) {
     }
 
     try {
-      const res = await fetch(`http://localhost:3000/api/admin/users/${editingUser.id}`, {
-        method: 'PUT',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('cafeteria_token')}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          name: editingUser.editName,
-          email: editingUser.editEmail,
-          role: editingUser.editRole
-        })
+      await updateUser(editingUser.id, {
+        name: editingUser.editName,
+        email: editingUser.editEmail,
+        role: editingUser.editRole
       });
-
-      if (res.ok) {
-        await loadDashboardData();
-        setEditingUser(null);
-        alert('Usuario actualizado correctamente');
-      } else {
-        const error = await res.json();
-        alert(`Error: ${error.error}`);
-      }
+      await loadDashboardData();
+      setEditingUser(null);
+      alert('Usuario actualizado correctamente');
     } catch (error) {
       console.error('Error al actualizar usuario:', error);
-      alert('Error al procesar la solicitud');
+      alert(error.message || 'Error al procesar la solicitud');
     }
   };
 
@@ -249,23 +220,12 @@ export default function AdminDashboard({ onLogout }) {
     }
 
     try {
-      const res = await fetch(`http://localhost:3000/api/admin/users/${userId}`, {
-        method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('cafeteria_token')}`
-        }
-      });
-
-      if (res.ok) {
-        await loadDashboardData();
-        alert('Usuario eliminado correctamente');
-      } else {
-        const error = await res.json();
-        alert(`Error: ${error.error}`);
-      }
+      await deleteUser(userId);
+      await loadDashboardData();
+      alert('Usuario eliminado correctamente');
     } catch (error) {
       console.error('Error al eliminar usuario:', error);
-      alert('Error al procesar la solicitud');
+      alert(error.message || 'Error al procesar la solicitud');
     }
   };
 

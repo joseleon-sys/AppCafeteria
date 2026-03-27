@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { showSuccess, showError } from './Toast';
 import { showConfirm, showPrompt } from './Dialog';
-
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+import { approveParentLinkRequest, getParentLinkRequests, rejectParentLinkRequest } from '../lib/api';
 
 export default function LinkRequestsList() {
   const [requests, setRequests] = useState([]);
@@ -15,17 +14,11 @@ export default function LinkRequestsList() {
 
   const fetchRequests = async () => {
     try {
-      const token = localStorage.getItem('cafeteria_token');
-      const response = await fetch(`${API_URL}/api/parent/link-requests`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-
-      const data = await response.json();
-      if (response.ok) {
-        setRequests(data.requests || []);
-      }
+      const data = await getParentLinkRequests();
+      setRequests(data.requests || []);
     } catch (error) {
       console.error('Error al obtener solicitudes:', error);
+      showError(error.message || 'No se pudieron cargar las solicitudes');
     } finally {
       setLoading(false);
     }
@@ -37,26 +30,12 @@ export default function LinkRequestsList() {
 
     setProcessing(requestId);
     try {
-      const token = localStorage.getItem('cafeteria_token');
-      const response = await fetch(`${API_URL}/api/parent/link-requests/${requestId}/approve`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ spendingLimit: 20.00 })
-      });
-
-      if (response.ok) {
-        showSuccess('Vinculación aprobada correctamente');
-        fetchRequests(); // Recargar lista
-      } else {
-        const data = await response.json();
-        showError(data.error || 'Error al aprobar');
-      }
+      await approveParentLinkRequest(requestId, 20.0);
+      showSuccess('Vinculación aprobada correctamente');
+      fetchRequests();
     } catch (error) {
       console.error('Error:', error);
-      showError('Error de conexión');
+      showError(error.message || 'Error de conexión');
     } finally {
       setProcessing(null);
     }
@@ -68,26 +47,12 @@ export default function LinkRequestsList() {
 
     setProcessing(requestId);
     try {
-      const token = localStorage.getItem('cafeteria_token');
-      const response = await fetch(`${API_URL}/api/parent/link-requests/${requestId}/reject`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ reason })
-      });
-
-      if (response.ok) {
-        showSuccess('Vinculación rechazada');
-        fetchRequests();
-      } else {
-        const data = await response.json();
-        showError(data.error || 'Error al rechazar');
-      }
+      await rejectParentLinkRequest(requestId, reason);
+      showSuccess('Vinculación rechazada');
+      fetchRequests();
     } catch (error) {
       console.error('Error:', error);
-      showError('Error de conexión');
+      showError(error.message || 'Error de conexión');
     } finally {
       setProcessing(null);
     }

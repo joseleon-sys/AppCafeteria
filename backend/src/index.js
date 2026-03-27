@@ -26,7 +26,8 @@ import {
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-dotenv.config({ path: path.join(__dirname, '../../.env') });
+dotenv.config({ path: path.join(__dirname, '../.env') });
+dotenv.config({ path: path.join(__dirname, '../../.env'), override: false });
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -40,15 +41,20 @@ if (!process.env.JWT_SECRET) {
   console.warn('⚠️ JWT_SECRET no configurado. Se usa una clave temporal de desarrollo.');
 }
 
-// Inicializar cliente de Supabase
-const supabaseUrl = process.env.SUPABASE_URL;
-const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
+// Inicializar cliente de Supabase para uso del servidor.
+const supabaseUrl = (process.env.SUPABASE_URL || '').trim();
+const supabaseServerKey = (
+  process.env.SUPABASE_SERVICE_ROLE_KEY ||
+  process.env.SUPABASE_SERVICE_KEY ||
+  process.env.SUPABASE_ANON_KEY ||
+  ''
+).trim();
 
-if (!supabaseUrl || !supabaseAnonKey) {
-  console.warn('⚠️ Variables de Supabase no encontradas. Usando datos mock.');
+if (!supabaseUrl || !supabaseServerKey) {
+  console.warn('⚠️ Variables de Supabase incompletas. Usando PostgreSQL local o datos mock.');
 }
 
-const supabase = supabaseUrl && supabaseAnonKey ? createClient(supabaseUrl, supabaseAnonKey) : null;
+const supabase = supabaseUrl && supabaseServerKey ? createClient(supabaseUrl, supabaseServerKey) : null;
 
 // Inicializar conexión a PostgreSQL local
 const pool = new Pool({
@@ -473,7 +479,8 @@ function requireAdmin(req, res, next) {
 
 // Helper para transformar producto de Supabase al formato del frontend
 function transformProducto(supabaseProduct) {
-  const nombre = (supabaseProduct.nombre || 'Sin nombre').toLowerCase();
+  const productName = supabaseProduct.nombre || supabaseProduct.name || 'Sin nombre';
+  const nombre = productName.toLowerCase();
   
   // Detectar categoría basándose en el nombre del producto
   let category = 'otros';
@@ -517,28 +524,32 @@ function transformProducto(supabaseProduct) {
     options = { sugar: { available: false }, removables: [] };
   }
   
-  const inferred = inferTechnicalFromName(supabaseProduct.nombre || 'Sin nombre', category);
+  const inferred = inferTechnicalFromName(productName, category);
 
   return {
     id: supabaseProduct.id,
-    name: supabaseProduct.nombre || 'Sin nombre',
-    description: supabaseProduct.descripcion || '',
-    price: parseFloat(supabaseProduct.precio) || 0,
-    category: category,
-    active: supabaseProduct.activo !== false,
-    image_url: supabaseProduct.imagen_url || 'https://images.unsplash.com/photo-1495474472287-4d71bcdd2085?w=400&q=80',
+    name: productName,
+    description: supabaseProduct.descripcion || supabaseProduct.description || '',
+    price: parseFloat(supabaseProduct.precio ?? supabaseProduct.price) || 0,
+    category: supabaseProduct.category || category,
+    active: (supabaseProduct.activo ?? supabaseProduct.active) !== false,
+    image_url: supabaseProduct.imagen_url || supabaseProduct.image_url || 'https://images.unsplash.com/photo-1495474472287-4d71bcdd2085?w=400&q=80',
     badges: Array.isArray(supabaseProduct.badges) ? supabaseProduct.badges : [],
-    allergens: Array.isArray(supabaseProduct.alergenos) && supabaseProduct.alergenos.length ? supabaseProduct.alergenos : inferred.allergens,
-    options: options,
-    ingredients: Array.isArray(supabaseProduct.ingredientes) && supabaseProduct.ingredientes.length ? supabaseProduct.ingredientes : inferred.ingredients,
-    contains_info: supabaseProduct.contiene || inferred.contains_info,
-    conservation: supabaseProduct.conservacion || inferred.conservation,
-    shelf_life_hours: supabaseProduct.caducidad_horas || inferred.shelf_life_hours,
-    calories_kcal: supabaseProduct.calorias_kcal || inferred.calories_kcal,
-    nutrition_table: supabaseProduct.tabla_nutricional || inferred.nutrition_table,
-    sanitary_approved: supabaseProduct.aprobado_sanidad !== false,
-    sanitary_notes: supabaseProduct.notas_sanidad || '',
-    approved_at: supabaseProduct.fecha_aprobacion || null
+    allergens: Array.isArray(supabaseProduct.alergenos)
+      ? supabaseProduct.alergenos
+      : (Array.isArray(supabaseProduct.allergens) && supabaseProduct.allergens.length ? supabaseProduct.allergens : inferred.allergens),
+    options: supabaseProduct.options || options,
+    ingredients: Array.isArray(supabaseProduct.ingredientes)
+      ? supabaseProduct.ingredientes
+      : (Array.isArray(supabaseProduct.ingredients) && supabaseProduct.ingredients.length ? supabaseProduct.ingredients : inferred.ingredients),
+    contains_info: supabaseProduct.contiene || supabaseProduct.contains_info || inferred.contains_info,
+    conservation: supabaseProduct.conservacion || supabaseProduct.conservation || inferred.conservation,
+    shelf_life_hours: supabaseProduct.caducidad_horas || supabaseProduct.shelf_life_hours || inferred.shelf_life_hours,
+    calories_kcal: supabaseProduct.calorias_kcal || supabaseProduct.calories_kcal || inferred.calories_kcal,
+    nutrition_table: supabaseProduct.tabla_nutricional || supabaseProduct.nutrition_table || inferred.nutrition_table,
+    sanitary_approved: (supabaseProduct.aprobado_sanidad ?? supabaseProduct.sanitary_approved) !== false,
+    sanitary_notes: supabaseProduct.notas_sanidad || supabaseProduct.sanitary_notes || '',
+    approved_at: supabaseProduct.fecha_aprobacion || supabaseProduct.approved_at || null
   };
 }
 
@@ -1606,7 +1617,7 @@ app.get('/api/products', authenticateToken, requireAdmin, async (req, res) => {
     }
 
     const { data, error } = await supabase
-      .from('productos_menu')
+      .from('products')
       .select('*');
 
     if (error) throw error;
@@ -1643,9 +1654,9 @@ app.get('/api/menu', async (req, res) => {
     }
 
     const { data, error } = await supabase
-      .from('productos_menu')
+      .from('products')
       .select('*')
-      .eq('activo', true);
+      .eq('active', true);
 
     if (error) throw error;
 
@@ -1714,14 +1725,19 @@ app.post('/api/products', authenticateToken, requireAdmin, async (req, res) => {
   try {
     if (supabase) {
       const supabaseProduct = {
-        nombre: product.name,
-        precio: product.price,
-        activo: product.active,
-        alergenos: product.allergens
+        name: product.name,
+        description: product.description,
+        price: product.price,
+        category: product.category,
+        active: product.active,
+        image_url: product.image_url,
+        badges: product.badges,
+        allergens: product.allergens,
+        options: product.options
       };
 
       const { data, error } = await supabase
-        .from('productos_menu')
+        .from('products')
         .insert([supabaseProduct])
         .select();
 
@@ -1823,10 +1839,15 @@ app.put('/api/products/:id', authenticateToken, requireAdmin, async (req, res) =
   try {
     if (supabase) {
       const supabaseUpdateMap = {
-        name: 'nombre',
-        price: 'precio',
-        active: 'activo',
-        allergens: 'alergenos'
+        name: 'name',
+        description: 'description',
+        price: 'price',
+        category: 'category',
+        active: 'active',
+        image_url: 'image_url',
+        badges: 'badges',
+        allergens: 'allergens',
+        options: 'options'
       };
 
       const supabaseUpdate = {};
@@ -1840,7 +1861,7 @@ app.put('/api/products/:id', authenticateToken, requireAdmin, async (req, res) =
 
       if (Object.keys(supabaseUpdate).length > 0) {
         const { data, error } = await supabase
-          .from('productos_menu')
+          .from('products')
           .update(supabaseUpdate)
           .eq('id', id)
           .select();
@@ -1929,7 +1950,7 @@ app.delete('/api/products/:id', authenticateToken, requireAdmin, async (req, res
     if (supabase) {
       if (isPermanent) {
         const { data, error } = await supabase
-          .from('productos_menu')
+          .from('products')
           .delete()
           .eq('id', id)
           .select();
@@ -1943,8 +1964,8 @@ app.delete('/api/products/:id', authenticateToken, requireAdmin, async (req, res
         }
       } else {
         const { data, error } = await supabase
-          .from('productos_menu')
-          .update({ activo: false })
+          .from('products')
+          .update({ active: false })
           .eq('id', id)
           .select();
 
@@ -1990,6 +2011,140 @@ app.delete('/api/products/:id', authenticateToken, requireAdmin, async (req, res
 // ============================================
 // ADMIN ENDPOINTS - Usuarios
 // ============================================
+
+// GET /api/admin/statistics - Resumen operativo del sistema
+app.get('/api/admin/statistics', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    if (supabase) {
+      const [{ data: users, error: usersError }, { data: orders, error: ordersError }, { data: fraudLogs, error: fraudError }] = await Promise.all([
+        supabase.from('users').select('role, is_adult, created_at'),
+        supabase.from('child_orders').select('status, total, created_at'),
+        supabase.from('fraud_prevention_log').select('severity, created_at')
+      ]);
+
+      if (usersError) throw usersError;
+      if (ordersError) throw ordersError;
+      if (fraudError) throw fraudError;
+
+      const todayDate = new Date().toISOString().slice(0, 10);
+      const safeUsers = users || [];
+      const safeOrders = orders || [];
+      const safeFraudLogs = fraudLogs || [];
+      const totalRevenue = safeOrders.reduce((sum, order) => sum + (Number(order.total) || 0), 0);
+
+      return res.json({
+        summary: {
+          total_users: safeUsers.length,
+          total_orders: safeOrders.length,
+          total_revenue: totalRevenue,
+          fraud_alerts: safeFraudLogs.length,
+          average_order_value: safeOrders.length ? totalRevenue / safeOrders.length : 0
+        },
+        users: {
+          adults: safeUsers.filter((user) => user.role !== 'child' || user.is_adult).length,
+          children: safeUsers.filter((user) => user.role === 'child' || user.is_adult === false).length,
+          admins: safeUsers.filter((user) => user.role === 'admin').length
+        },
+        orders: {
+          completed: safeOrders.filter((order) => ['paid', 'completed', 'approved'].includes(order.status)).length,
+          pending: safeOrders.filter((order) => ['pending', 'pending_approval'].includes(order.status)).length,
+          rejected: safeOrders.filter((order) => ['rejected', 'cancelled'].includes(order.status)).length
+        },
+        today: {
+          new_orders: safeOrders.filter((order) => String(order.created_at || '').slice(0, 10) === todayDate).length,
+          new_users: safeUsers.filter((user) => String(user.created_at || '').slice(0, 10) === todayDate).length,
+          fraud_incidents: safeFraudLogs.filter((log) => String(log.created_at || '').slice(0, 10) === todayDate).length
+        }
+      });
+    }
+
+    const [usersResult, ordersResult] = await Promise.all([
+      pool.query('SELECT role, is_adult, created_at FROM users'),
+      pool.query('SELECT status, total, created_at FROM child_orders')
+    ]);
+
+    let fraudRows = [];
+    try {
+      const fraudResult = await pool.query('SELECT severity, created_at FROM fraud_prevention_log');
+      fraudRows = fraudResult.rows || [];
+    } catch {
+      fraudRows = [];
+    }
+
+    const users = usersResult.rows || [];
+    const orders = ordersResult.rows || [];
+    const todayDate = new Date().toISOString().slice(0, 10);
+    const totalRevenue = orders.reduce((sum, order) => sum + (Number(order.total) || 0), 0);
+
+    return res.json({
+      summary: {
+        total_users: users.length,
+        total_orders: orders.length,
+        total_revenue: totalRevenue,
+        fraud_alerts: fraudRows.length,
+        average_order_value: orders.length ? totalRevenue / orders.length : 0
+      },
+      users: {
+        adults: users.filter((user) => user.role !== 'child' || user.is_adult).length,
+        children: users.filter((user) => user.role === 'child' || user.is_adult === false).length,
+        admins: users.filter((user) => user.role === 'admin').length
+      },
+      orders: {
+        completed: orders.filter((order) => ['paid', 'completed', 'approved'].includes(order.status)).length,
+        pending: orders.filter((order) => ['pending', 'pending_approval'].includes(order.status)).length,
+        rejected: orders.filter((order) => ['rejected', 'cancelled'].includes(order.status)).length
+      },
+      today: {
+        new_orders: orders.filter((order) => String(order.created_at || '').slice(0, 10) === todayDate).length,
+        new_users: users.filter((user) => String(user.created_at || '').slice(0, 10) === todayDate).length,
+        fraud_incidents: fraudRows.filter((log) => String(log.created_at || '').slice(0, 10) === todayDate).length
+      }
+    });
+  } catch (error) {
+    console.error('Error al obtener estadísticas admin:', error);
+    return res.status(500).json({ error: 'Error al obtener estadísticas' });
+  }
+});
+
+// GET /api/admin/fraud-log - Últimos eventos de seguridad
+app.get('/api/admin/fraud-log', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    if (supabase) {
+      const { data, error } = await supabase
+        .from('fraud_prevention_log')
+        .select('id, user_id, action_type, severity, details, ip_address, user_agent, created_at')
+        .order('created_at', { ascending: false })
+        .limit(100);
+
+      if (error) throw error;
+
+      return res.json({
+        logs: (data || []).map((log) => ({
+          ...log,
+          user_name: log.user_id ? `Usuario #${log.user_id}` : 'Sistema'
+        }))
+      });
+    }
+
+    try {
+      const result = await pool.query(
+        `SELECT f.id, f.user_id, f.action_type, f.severity, f.details, f.ip_address, f.user_agent, f.created_at,
+                COALESCE(u.name, 'Sistema') AS user_name
+         FROM fraud_prevention_log f
+         LEFT JOIN users u ON u.id = f.user_id
+         ORDER BY f.created_at DESC
+         LIMIT 100`
+      );
+
+      return res.json({ logs: result.rows || [] });
+    } catch {
+      return res.json({ logs: [] });
+    }
+  } catch (error) {
+    console.error('Error al obtener fraude log:', error);
+    return res.status(500).json({ error: 'Error al obtener fraude log' });
+  }
+});
 
 // GET /api/admin/users - Obtener todos los usuarios
 app.get('/api/admin/users', authenticateToken, requireAdmin, async (req, res) => {

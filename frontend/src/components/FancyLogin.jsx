@@ -2,8 +2,7 @@
 import React, { useState } from "react";
 import "./FancyLogin.css";
 import { showInfo, showSuccess } from "./Toast";
-
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+import { loginUser, registerUser } from "../lib/api";
 
 export default function FancyLogin({ onLogin }) {
   const [isSignup, setIsSignup] = useState(false);
@@ -53,19 +52,7 @@ export default function FancyLogin({ onLogin }) {
     setLoading(true);
     
     try {
-      const response = await fetch(`${API_URL}/api/auth/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: loginEmail, password: loginPassword })
-      });
-      
-      const data = await response.json();
-      
-      if (!response.ok) {
-        setError(data.error || 'Error al iniciar sesión');
-        setLoading(false);
-        return;
-      }
+      const data = await loginUser({ email: loginEmail, password: loginPassword });
       
       // Guardar token
       localStorage.setItem('cafeteria_token', data.token);
@@ -83,7 +70,7 @@ export default function FancyLogin({ onLogin }) {
       });
     } catch (err) {
       console.error('Error de login:', err);
-      setError('Error de conexión. Intenta de nuevo.');
+      setError(err.message || 'Error de conexión. Intenta de nuevo.');
     } finally {
       setLoading(false);
     }
@@ -128,24 +115,12 @@ export default function FancyLogin({ onLogin }) {
     }
     
     try {
-      const response = await fetch(`${API_URL}/api/auth/register`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: formattedName,
-          email: signupEmail,
-          password: signupPassword,
-          birthDate: signupBirthDate
-        })
+      const data = await registerUser({
+        name: formattedName,
+        email: signupEmail,
+        password: signupPassword,
+        birthDate: signupBirthDate
       });
-      
-      const data = await response.json();
-      
-      if (!response.ok) {
-        setError(data.error || 'Error al crear cuenta');
-        setLoading(false);
-        return;
-      }
       
       // Guardar token
       localStorage.setItem('cafeteria_token', data.token);
@@ -172,7 +147,7 @@ export default function FancyLogin({ onLogin }) {
       });
     } catch (err) {
       console.error('Error de registro:', err);
-      setError('Error de conexión. Intenta de nuevo.');
+      setError(err.message || 'Error de conexión. Intenta de nuevo.');
     } finally {
       setLoading(false);
     }

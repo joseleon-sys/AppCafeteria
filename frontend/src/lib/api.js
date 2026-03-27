@@ -1,5 +1,4 @@
-// Servicio de API para comunicarse con el backend
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+const API_URL = import.meta.env.VITE_API_URL || import.meta.env.BACKEND_URL || 'http://localhost:3000';
 
 function getAuthToken() {
   return localStorage.getItem('cafeteria_token');
@@ -20,268 +19,237 @@ function getAuthHeaders(includeContentType = false) {
   return headers;
 }
 
-/**
- * Manejo genérico de respuestas fetch
- */
 async function handleResponse(response) {
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ error: 'Error desconocido' }));
-    throw new Error(error.error || `HTTP ${response.status}: ${response.statusText}`);
+  if (response.status === 204) {
+    return null;
   }
-  return response.json();
+
+  const payload = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    throw new Error(payload?.error || `HTTP ${response.status}: ${response.statusText}`);
+  }
+
+  return payload;
 }
 
-/**
- * PRODUCTOS
- */
+async function apiRequest(path, options = {}, { auth = false, contentType = false } = {}) {
+  const headers = {
+    ...(auth ? getAuthHeaders(contentType) : (contentType ? { 'Content-Type': 'application/json' } : {})),
+    ...(options.headers || {}),
+  };
 
-// Obtener todos los productos (admin)
+  const response = await fetch(`${API_URL}${path}`, {
+    ...options,
+    headers,
+  });
+
+  return handleResponse(response);
+}
+
+export { API_URL, getAuthToken, getAuthHeaders, handleResponse, apiRequest };
+
+export async function loginUser(credentials) {
+  return apiRequest('/api/auth/login', {
+    method: 'POST',
+    body: JSON.stringify(credentials),
+  }, { contentType: true });
+}
+
+export async function registerUser(userData) {
+  return apiRequest('/api/auth/register', {
+    method: 'POST',
+    body: JSON.stringify(userData),
+  }, { contentType: true });
+}
+
 export async function getAllProducts() {
-  const response = await fetch(`${API_URL}/api/products`, {
-    headers: getAuthHeaders(),
-  });
-  return handleResponse(response);
+  return apiRequest('/api/products', {}, { auth: true });
 }
 
-// Obtener solo productos activos (usuarios)
 export async function getActiveProducts() {
-  const response = await fetch(`${API_URL}/api/menu`);
-  return handleResponse(response);
+  return apiRequest('/api/menu');
 }
 
-// Crear nuevo producto
 export async function createProduct(productData) {
-  const response = await fetch(`${API_URL}/api/products`, {
+  return apiRequest('/api/products', {
     method: 'POST',
-    headers: getAuthHeaders(true),
     body: JSON.stringify(productData),
-  });
-  return handleResponse(response);
+  }, { auth: true, contentType: true });
 }
 
-// Actualizar producto existente
 export async function updateProduct(id, productData) {
-  const response = await fetch(`${API_URL}/api/products/${id}`, {
+  return apiRequest(`/api/products/${id}`, {
     method: 'PUT',
-    headers: getAuthHeaders(true),
     body: JSON.stringify(productData),
-  });
-  return handleResponse(response);
+  }, { auth: true, contentType: true });
 }
 
-// Eliminar producto (borrado lógico por defecto)
 export async function deleteProduct(id, permanent = false) {
-  const url = permanent 
-    ? `${API_URL}/api/products/${id}?permanent=true`
-    : `${API_URL}/api/products/${id}`;
-    
-  const response = await fetch(url, {
+  const suffix = permanent ? '?permanent=true' : '';
+  return apiRequest(`/api/products/${id}${suffix}`, {
     method: 'DELETE',
-    headers: getAuthHeaders(),
-  });
-  return handleResponse(response);
+  }, { auth: true });
 }
 
-/**
- * ÓRDENES
- */
-
-// Crear nueva orden
 export async function createOrder(orderData) {
-  const response = await fetch(`${API_URL}/api/orders`, {
+  return apiRequest('/api/orders', {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
     body: JSON.stringify(orderData),
-  });
-  return handleResponse(response);
+  }, { contentType: true });
 }
 
-// Obtener detalle de orden
 export async function getOrder(id) {
-  const response = await fetch(`${API_URL}/api/orders/${id}`);
-  return handleResponse(response);
+  return apiRequest(`/api/orders/${id}`);
 }
 
-/**
- * HEALTHCHECK
- */
 export async function healthCheck() {
-  const response = await fetch(`${API_URL}/api/health`);
-  return handleResponse(response);
+  return apiRequest('/api/health');
 }
 
-/**
- * PERFIL DE USUARIO
- */
 export async function updateProfileAlias(alias) {
-  const response = await fetch(`${API_URL}/api/auth/profile`, {
+  return apiRequest('/api/auth/profile', {
     method: 'PUT',
-    headers: getAuthHeaders(true),
     body: JSON.stringify({ alias }),
-  });
-  return handleResponse(response);
+  }, { auth: true, contentType: true });
 }
 
 export async function getCurrentUser() {
-  const response = await fetch(`${API_URL}/api/auth/me`, {
-    headers: getAuthHeaders(),
-  });
-  return handleResponse(response);
+  return apiRequest('/api/auth/me', {}, { auth: true });
 }
 
-/**
- * CHILD ORDERS (FASE 3)
- */
-
-// Crear pedido como hijo
-export async function createChildOrder(items, notes = '', parentId = null) {
-  const response = await fetch(`${API_URL}/api/child/orders`, {
+export async function requestParentLink(parentToken) {
+  return apiRequest('/api/child/link-parent', {
     method: 'POST',
-    headers: getAuthHeaders(true),
-    body: JSON.stringify({ items, notes, parent_id: parentId }),
-  });
-  return handleResponse(response);
+    body: JSON.stringify({ parentToken }),
+  }, { auth: true, contentType: true });
 }
 
-// Ver mis pedidos (como hijo)
-export async function getMyChildOrders(status = null) {
-  const url = new URL(`${API_URL}/api/child/orders`);
-  if (status) url.searchParams.append('status', status);
-  
-  const response = await fetch(url, {
-    headers: getAuthHeaders(),
-  });
-  return handleResponse(response);
+export async function getParentLinkRequests() {
+  return apiRequest('/api/parent/link-requests', {}, { auth: true });
 }
 
-// Ver detalle de mi pedido (como hijo)
-export async function getMyChildOrderDetail(orderId) {
-  const response = await fetch(`${API_URL}/api/child/orders/${orderId}`, {
-    headers: getAuthHeaders(),
-  });
-  return handleResponse(response);
-}
-
-// Ver pedidos de mis hijos (como padre)
-export async function getParentChildOrders(filters = {}) {
-  const url = new URL(`${API_URL}/api/parent/child-orders`);
-  if (filters.status) url.searchParams.append('status', filters.status);
-  if (filters.child_id) url.searchParams.append('child_id', filters.child_id);
-  if (filters.limit) url.searchParams.append('limit', filters.limit);
-  if (filters.offset) url.searchParams.append('offset', filters.offset);
-  
-  const response = await fetch(url, {
-    headers: getAuthHeaders(),
-  });
-  return handleResponse(response);
-}
-
-// Ver detalle de pedido de hijo (como padre)
-export async function getParentOrderDetail(orderId) {
-  const response = await fetch(`${API_URL}/api/parent/orders/${orderId}`, {
-    headers: getAuthHeaders(),
-  });
-  return handleResponse(response);
-}
-
-// Aprobar pedido (como padre)
-export async function approveChildOrder(orderId, approvedAmount = null) {
-  const response = await fetch(`${API_URL}/api/parent/orders/${orderId}/approve`, {
+export async function approveParentLinkRequest(requestId, spendingLimit = 20) {
+  return apiRequest(`/api/parent/link-requests/${requestId}/approve`, {
     method: 'PUT',
-    headers: getAuthHeaders(true),
-    body: JSON.stringify({ approved_amount: approvedAmount }),
-  });
-  return handleResponse(response);
+    body: JSON.stringify({ spendingLimit }),
+  }, { auth: true, contentType: true });
 }
 
-// Rechazar pedido (como padre)
-export async function rejectChildOrder(orderId, reason) {
-  const response = await fetch(`${API_URL}/api/parent/orders/${orderId}/reject`, {
+export async function rejectParentLinkRequest(requestId, reason) {
+  return apiRequest(`/api/parent/link-requests/${requestId}/reject`, {
     method: 'PUT',
-    headers: getAuthHeaders(true),
     body: JSON.stringify({ reason }),
-  });
-  return handleResponse(response);
+  }, { auth: true, contentType: true });
 }
 
-// Modificar pedido (como padre)
+export async function createChildOrder(items, notes = '', parentId = null) {
+  return apiRequest('/api/child/orders', {
+    method: 'POST',
+    body: JSON.stringify({ items, notes, parent_id: parentId }),
+  }, { auth: true, contentType: true });
+}
+
+export async function getMyChildOrders(status = null) {
+  const query = status ? `?status=${encodeURIComponent(status)}` : '';
+  return apiRequest(`/api/child/orders${query}`, {}, { auth: true });
+}
+
+export async function getMyChildOrderDetail(orderId) {
+  return apiRequest(`/api/child/orders/${orderId}`, {}, { auth: true });
+}
+
+export async function getParentChildOrders(filters = {}) {
+  const params = new URLSearchParams();
+  if (filters.status) params.append('status', filters.status);
+  if (filters.child_id) params.append('child_id', filters.child_id);
+  if (filters.limit) params.append('limit', String(filters.limit));
+  if (filters.offset) params.append('offset', String(filters.offset));
+
+  const suffix = params.toString() ? `?${params.toString()}` : '';
+  return apiRequest(`/api/parent/child-orders${suffix}`, {}, { auth: true });
+}
+
+export async function getParentOrderDetail(orderId) {
+  return apiRequest(`/api/parent/orders/${orderId}`, {}, { auth: true });
+}
+
+export async function approveChildOrder(orderId, approvedAmount = null) {
+  return apiRequest(`/api/parent/orders/${orderId}/approve`, {
+    method: 'PUT',
+    body: JSON.stringify({ approved_amount: approvedAmount }),
+  }, { auth: true, contentType: true });
+}
+
+export async function rejectChildOrder(orderId, reason) {
+  return apiRequest(`/api/parent/orders/${orderId}/reject`, {
+    method: 'PUT',
+    body: JSON.stringify({ reason }),
+  }, { auth: true, contentType: true });
+}
+
 export async function modifyChildOrder(orderId, items) {
-  const response = await fetch(`${API_URL}/api/parent/orders/${orderId}/modify`, {
+  return apiRequest(`/api/parent/orders/${orderId}/modify`, {
     method: 'PUT',
-    headers: getAuthHeaders(true),
     body: JSON.stringify({ items }),
-  });
-  return handleResponse(response);
+  }, { auth: true, contentType: true });
 }
 
-// Marcar como pagado (como padre)
 export async function markOrderAsPaid(orderId, paymentMethod = 'cash', amountPaid = null) {
-  const response = await fetch(`${API_URL}/api/parent/orders/${orderId}/pay`, {
+  return apiRequest(`/api/parent/orders/${orderId}/pay`, {
     method: 'PUT',
-    headers: getAuthHeaders(true),
     body: JSON.stringify({ payment_method: paymentMethod, amount_paid: amountPaid }),
-  });
-  return handleResponse(response);
+  }, { auth: true, contentType: true });
 }
 
-// Ver historial de pedidos (como padre)
 export async function getOrderHistory(filters = {}) {
-  const url = new URL(`${API_URL}/api/parent/child-orders/history`);
-  if (filters.child_id) url.searchParams.append('child_id', filters.child_id);
-  if (filters.status) url.searchParams.append('status', filters.status);
-  if (filters.from_date) url.searchParams.append('from_date', filters.from_date);
-  if (filters.to_date) url.searchParams.append('to_date', filters.to_date);
-  if (filters.limit) url.searchParams.append('limit', filters.limit);
-  
-  const response = await fetch(url, {
-    headers: getAuthHeaders(),
-  });
-  return handleResponse(response);
+  const params = new URLSearchParams();
+  if (filters.child_id) params.append('child_id', filters.child_id);
+  if (filters.status) params.append('status', filters.status);
+  if (filters.from_date) params.append('from_date', filters.from_date);
+  if (filters.to_date) params.append('to_date', filters.to_date);
+  if (filters.limit) params.append('limit', String(filters.limit));
+
+  const suffix = params.toString() ? `?${params.toString()}` : '';
+  return apiRequest(`/api/parent/child-orders/history${suffix}`, {}, { auth: true });
 }
 
-// ===== ADMIN: User Management =====
+export async function getAdminStatistics() {
+  return apiRequest('/api/admin/statistics', {}, { auth: true });
+}
+
+export async function getFraudLog() {
+  return apiRequest('/api/admin/fraud-log', {}, { auth: true });
+}
+
 export async function getAllUsers() {
-  const response = await fetch(`${API_BASE_URL}/api/admin/users`, {
-    headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
-  });
-  return handleResponse(response);
+  return apiRequest('/api/admin/users', {}, { auth: true });
 }
 
 export async function blockUser(userId, blocked = true) {
-  const response = await fetch(`${API_BASE_URL}/api/admin/users/${userId}/block`, {
+  return apiRequest(`/api/admin/users/${userId}/block`, {
     method: 'PUT',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${localStorage.getItem('token')}`
-    },
-    body: JSON.stringify({ blocked })
-  });
-  return handleResponse(response);
+    body: JSON.stringify({ blocked }),
+  }, { auth: true, contentType: true });
 }
 
 export async function updateUser(userId, userData) {
-  const response = await fetch(`${API_BASE_URL}/api/admin/users/${userId}`, {
+  return apiRequest(`/api/admin/users/${userId}`, {
     method: 'PUT',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${localStorage.getItem('token')}`
-    },
-    body: JSON.stringify(userData)
-  });
-  return handleResponse(response);
+    body: JSON.stringify(userData),
+  }, { auth: true, contentType: true });
 }
 
 export async function deleteUser(userId) {
-  const response = await fetch(`${API_BASE_URL}/api/admin/users/${userId}`, {
+  return apiRequest(`/api/admin/users/${userId}`, {
     method: 'DELETE',
-    headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
-  });
-  return handleResponse(response);
+  }, { auth: true });
 }
 
 export default {
+  API_URL,
+  loginUser,
+  registerUser,
   getAllProducts,
   getActiveProducts,
   createProduct,
@@ -292,7 +260,10 @@ export default {
   healthCheck,
   updateProfileAlias,
   getCurrentUser,
-  // FASE 3: Child Orders
+  requestParentLink,
+  getParentLinkRequests,
+  approveParentLinkRequest,
+  rejectParentLinkRequest,
   createChildOrder,
   getMyChildOrders,
   getMyChildOrderDetail,
@@ -303,7 +274,8 @@ export default {
   modifyChildOrder,
   markOrderAsPaid,
   getOrderHistory,
-  // Admin: User Management
+  getAdminStatistics,
+  getFraudLog,
   getAllUsers,
   blockUser,
   updateUser,
