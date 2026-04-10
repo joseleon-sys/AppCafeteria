@@ -127,6 +127,17 @@ export async function getCurrentUser() {
   return apiRequest('/api/auth/me', {}, { auth: true });
 }
 
+export async function getMyFavorites() {
+  return apiRequest('/api/auth/favorites', {}, { auth: true });
+}
+
+export async function updateMyFavorites(favoriteIds) {
+  return apiRequest('/api/auth/favorites', {
+    method: 'PUT',
+    body: JSON.stringify({ favoriteIds }),
+  }, { auth: true, contentType: true });
+}
+
 export async function requestParentLink(parentToken) {
   return apiRequest('/api/child/link-parent', {
     method: 'POST',
@@ -282,6 +293,8 @@ export default {
   healthCheck,
   updateProfileAlias,
   getCurrentUser,
+  getMyFavorites,
+  updateMyFavorites,
   requestParentLink,
   getParentLinkRequests,
   approveParentLinkRequest,

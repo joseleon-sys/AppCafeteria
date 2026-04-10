@@ -2,7 +2,7 @@ import React from "react";
 import { useCart } from "../lib/CartContext";
 import './BottomNav.css';
 
-export default function BottomNav({ activeTab = 'home', onTabChange, onShowSpinner, onShowCart, onShowHistory, onShowProfile }) {
+export default function BottomNav({ activeTab = 'home', onTabChange, onShowSpinner, onShowCart, onShowHistory }) {
   const { cartItems } = useCart();
   const transitionDurationMs = 600;
   
@@ -18,12 +18,6 @@ export default function BottomNav({ activeTab = 'home', onTabChange, onShowSpinn
         onTabChange && onTabChange(tabId);
         onShowHistory && onShowHistory();
       }, transitionDurationMs);
-    } else if (action === 'profile') {
-      onShowSpinner && onShowSpinner();
-      setTimeout(() => {
-        onTabChange && onTabChange(tabId);
-        onShowProfile && onShowProfile();
-      }, transitionDurationMs);
     } else if (action === 'loading') {
       onTabChange && onTabChange(tabId);
       onShowSpinner && onShowSpinner();
@@ -34,17 +28,6 @@ export default function BottomNav({ activeTab = 'home', onTabChange, onShowSpinn
 
   return (
     <nav className="bottom-nav" aria-label="Navegación principal">
-      <button 
-        className={`nav-btn ${activeTab === 'promos' ? 'active' : ''}`} 
-        onClick={() => handleNavClick('promos', 'loading')}
-        aria-label="Promociones"
-      >
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-          <path d="M12 8v13m0-13V6a2 2 0 112 2h-2zm0 0V5.5A2.5 2.5 0 109.5 8H12zm-7 4h14M5 12a2 2 0 110-4h14a2 2 0 110 4M5 12v7a2 2 0 002 2h10a2 2 0 002-2v-7" />
-        </svg>
-        <span>Promos</span>
-      </button>
-      
       <button 
         className={`nav-btn ${activeTab === 'orders' ? 'active' : ''}`} 
         onClick={() => handleNavClick('orders', 'history')}
@@ -81,18 +64,6 @@ export default function BottomNav({ activeTab = 'home', onTabChange, onShowSpinn
           <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
         </svg>
         <span>Favoritos</span>
-      </button>
-      
-      <button 
-        className={`nav-btn ${activeTab === 'profile' ? 'active' : ''}`} 
-        onClick={() => handleNavClick('profile', 'profile')}
-        aria-label="Perfil"
-      >
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-          <circle cx="12" cy="12" r="3" />
-          <circle cx="12" cy="12" r="9" />
-        </svg>
-        <span>Perfil</span>
       </button>
     </nav>
   );

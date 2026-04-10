@@ -16,10 +16,12 @@ CREATE TABLE IF NOT EXISTS users (
   verified_email BOOLEAN DEFAULT false,
   created_at TIMESTAMP DEFAULT NOW(),
   last_login TIMESTAMP,
-  active BOOLEAN DEFAULT true
+  active BOOLEAN DEFAULT true,
+  favoritos TEXT[] DEFAULT '{}'
 );
 
 ALTER TABLE users ADD COLUMN IF NOT EXISTS alias VARCHAR(30);
+ALTER TABLE users ADD COLUMN IF NOT EXISTS favoritos TEXT[] DEFAULT '{}';
 
 CREATE TABLE IF NOT EXISTS menu_items (
   id SERIAL PRIMARY KEY,

@@ -390,6 +390,18 @@ async function ensureLocalProductSchema() {
 
 async function ensureLocalUserSchema() {
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS alias VARCHAR(30)`);
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS favoritos TEXT[] DEFAULT '{}'::TEXT[]`);
+  await pool.query(`
+    ALTER TABLE users
+    ALTER COLUMN favoritos TYPE TEXT[]
+    USING (
+      CASE
+        WHEN favoritos IS NULL THEN '{}'::TEXT[]
+        ELSE ARRAY(SELECT item::TEXT FROM unnest(favoritos) AS item)
+      END
+    )
+  `);
+  await pool.query(`ALTER TABLE users ALTER COLUMN favoritos SET DEFAULT '{}'::TEXT[]`);
 }
 
 function isLocalDatabaseUnavailable(error) {
@@ -704,6 +716,43 @@ function normalizeAlias(value) {
 function isValidAlias(value) {
   if (value === null || value === undefined || value === '') return true;
   return /^[A-Za-z0-9_.-]{3,30}$/.test(String(value));
+}
+
+function normalizeFavoriteIds(value) {
+  let source = value;
+
+  if (typeof source === 'string') {
+    const trimmed = source.trim();
+    if (!trimmed) return [];
+
+    try {
+      source = JSON.parse(trimmed);
+    } catch {
+      source = trimmed
+        .split(',')
+        .map((item) => item.trim())
+        .filter(Boolean);
+    }
+  }
+
+  if (!Array.isArray(source)) {
+    return [];
+  }
+
+  const uniqueIds = new Set();
+
+  for (const item of source) {
+    const normalizedId = String(item ?? '').trim();
+    if (normalizedId) {
+      uniqueIds.add(normalizedId);
+    }
+  }
+
+  return Array.from(uniqueIds);
+}
+
+function serializeFavoriteIdsForDatabase(favoriteIds) {
+  return normalizeFavoriteIds(favoriteIds);
 }
 
 // Middleware para verificar JWT
@@ -1148,6 +1197,7 @@ app.post('/api/auth/login', loginRateLimiter, async (req, res) => {
         role: user.role,
         isAdult: user.is_adult,
         parentToken: user.parent_token,
+        favorites: normalizeFavoriteIds(user.favoritos),
         trustScore,
         created_at: user.created_at || null
       }
@@ -1169,7 +1219,7 @@ app.get('/api/auth/me', authenticateToken, async (req, res) => {
   try {
     if (!supabase) {
       const result = await pool.query(
-        'SELECT id, email, nombre AS name, alias, role, is_adult, parent_token, verified_email, verified_phone, created_at FROM users WHERE id = $1 LIMIT 1',
+        'SELECT id, email, nombre AS name, alias, role, is_adult, parent_token, favoritos, verified_email, verified_phone, created_at FROM users WHERE id = $1 LIMIT 1',
         [req.user.id]
       );
 
@@ -1184,6 +1234,7 @@ app.get('/api/auth/me', authenticateToken, async (req, res) => {
             role: user.role,
             isAdult: user.is_adult,
             parentToken: user.parent_token,
+            favorites: normalizeFavoriteIds(user.favoritos),
             verified_email: user.verified_email,
             verified_phone: user.verified_phone,
             created_at: user.created_at || null
@@ -1195,8 +1246,9 @@ app.get('/api/auth/me', authenticateToken, async (req, res) => {
         user: {
           id: req.user.id,
           email: req.user.email,
-            role: req.user.role,
-            created_at: null
+          role: req.user.role,
+          favorites: [],
+          created_at: null
         }
       });
     }
@@ -1220,6 +1272,7 @@ app.get('/api/auth/me', authenticateToken, async (req, res) => {
         role: user.role,
         isAdult: user.is_adult,
         parentToken: user.parent_token,
+        favorites: normalizeFavoriteIds(user.favoritos),
         verified_email: user.verified_email,
         verified_phone: user.verified_phone,
         created_at: user.created_at || null
@@ -1228,6 +1281,88 @@ app.get('/api/auth/me', authenticateToken, async (req, res) => {
   } catch (error) {
     console.error('Error al obtener perfil:', error);
     res.status(500).json({ error: 'Error al obtener perfil' });
+  }
+});
+
+app.get('/api/auth/favorites', authenticateToken, async (req, res) => {
+  try {
+    if (supabase) {
+      const { data, error } = await supabase
+        .from('users')
+        .select('favoritos')
+        .eq('id', req.user.id)
+        .single();
+
+      if (error) {
+        if (error.message?.toLowerCase().includes('favoritos')) {
+          return res.status(400).json({ error: 'Falta la columna favoritos en Supabase. Ejecuta el SQL actualizado.' });
+        }
+        throw error;
+      }
+
+      return res.json({ favorites: normalizeFavoriteIds(data?.favoritos) });
+    }
+
+    const result = await pool.query(
+      'SELECT favoritos FROM users WHERE id = $1 LIMIT 1',
+      [req.user.id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Usuario no encontrado' });
+    }
+
+    return res.json({ favorites: normalizeFavoriteIds(result.rows[0].favoritos) });
+  } catch (error) {
+    console.error('Error al obtener favoritos:', error);
+    return res.status(500).json({ error: 'Error al obtener favoritos' });
+  }
+});
+
+app.put('/api/auth/favorites', authenticateToken, async (req, res) => {
+  try {
+    const favoriteIds = normalizeFavoriteIds(req.body?.favoriteIds);
+
+    if (supabase) {
+      const { data, error } = await supabase
+        .from('users')
+        .update({ favoritos: favoriteIds })
+        .eq('id', req.user.id)
+        .select('id, favoritos')
+        .single();
+
+      if (error) {
+        if (error.message?.toLowerCase().includes('favoritos')) {
+          return res.status(400).json({ error: 'Falta la columna favoritos en Supabase. Ejecuta el SQL actualizado.' });
+        }
+        throw error;
+      }
+
+      return res.json({
+        message: 'Favoritos actualizados correctamente',
+        favorites: normalizeFavoriteIds(data?.favoritos)
+      });
+    }
+
+    const result = await pool.query(
+      `UPDATE users
+       SET favoritos = $1
+       WHERE id = $2
+       RETURNING id, favoritos`,
+      [serializeFavoriteIdsForDatabase(favoriteIds), req.user.id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Usuario no encontrado' });
+    }
+
+    return res.json({
+      message: 'Favoritos actualizados correctamente',
+      favorites: normalizeFavoriteIds(result.rows[0].favoritos)
+    });
+  } catch (error) {
+    console.error('Error al actualizar favoritos:', error);
+    return res.status(500).json({ error: 'Error al actualizar favoritos' });
   }
 });
 

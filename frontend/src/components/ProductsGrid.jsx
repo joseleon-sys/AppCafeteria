@@ -3,7 +3,11 @@ import ProductCard from "./ProductCard";
 import ProductModal from "./ProductModal";
 import SkeletonLoader from "./SkeletonLoader";
 import { useCart } from "../lib/CartContext";
-import { getActiveProducts } from "../lib/api";
+import { getActiveProducts, getMyFavorites, updateMyFavorites } from "../lib/api";
+
+function normalizeFavoriteId(value) {
+  return String(value ?? '').trim();
+}
 
 function inferTechnicalData(name, category) {
   const nombre = (name || '').toLowerCase();
@@ -54,21 +58,55 @@ export default function ProductsGrid({ mode = 'catalog', selectedCategory = 'caf
   const { addItem } = useCart();
 
   useEffect(() => {
-    try {
-      const savedFavorites = localStorage.getItem('cafeteria-favorites');
-      if (!savedFavorites) return;
+    let isMounted = true;
 
-      const parsedFavorites = JSON.parse(savedFavorites);
-      setFavoriteIds(Array.isArray(parsedFavorites) ? parsedFavorites : []);
-    } catch (storageError) {
-      console.error('Error al cargar favoritos:', storageError);
-      setFavoriteIds([]);
-    }
+    const loadFavorites = async () => {
+      try {
+        const response = await getMyFavorites();
+        const remoteFavorites = Array.isArray(response?.favorites) ? response.favorites : [];
+
+        let legacyFavorites = [];
+        try {
+          const storedFavorites = localStorage.getItem('cafeteria-favorites');
+          legacyFavorites = storedFavorites ? JSON.parse(storedFavorites) : [];
+        } catch (storageError) {
+          console.error('Error al leer favoritos antiguos del dispositivo:', storageError);
+        }
+
+        const mergedFavorites = Array.from(
+          new Set(
+            [...remoteFavorites, ...(Array.isArray(legacyFavorites) ? legacyFavorites : [])]
+              .map(normalizeFavoriteId)
+              .filter(Boolean)
+          )
+        );
+
+        if (
+          mergedFavorites.length !== remoteFavorites.length ||
+          mergedFavorites.some((id, index) => id !== remoteFavorites[index])
+        ) {
+          const updatedResponse = await updateMyFavorites(mergedFavorites);
+          if (isMounted) {
+            setFavoriteIds(Array.isArray(updatedResponse?.favorites) ? updatedResponse.favorites : mergedFavorites);
+          }
+        } else if (isMounted) {
+          setFavoriteIds(remoteFavorites);
+        }
+
+        localStorage.removeItem('cafeteria-favorites');
+      } catch (favoritesError) {
+        console.error('Error al cargar favoritos del usuario:', favoritesError);
+        if (!isMounted) return;
+        setFavoriteIds([]);
+      }
+    };
+
+    loadFavorites();
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
-
-  useEffect(() => {
-    localStorage.setItem('cafeteria-favorites', JSON.stringify(favoriteIds));
-  }, [favoriteIds]);
 
   // Cargar productos desde la API
   useEffect(() => {
@@ -129,7 +167,7 @@ export default function ProductsGrid({ mode = 'catalog', selectedCategory = 'caf
   // Filtrar productos basado en la categoría y subcategoría seleccionadas
   const filteredProducts = products.filter(product => {
     if (mode === 'favorites') {
-      return favoriteIds.includes(product.id);
+      return favoriteIds.includes(normalizeFavoriteId(product.id));
     }
 
     // Filtro de categoría
@@ -178,15 +216,25 @@ export default function ProductsGrid({ mode = 'catalog', selectedCategory = 'caf
     setSelectedProduct(null);
   };
 
-  const handleToggleFavorite = (productId) => {
-    setFavoriteIds((currentFavorites) =>
-      currentFavorites.includes(productId)
-        ? currentFavorites.filter((id) => id !== productId)
-        : [...currentFavorites, productId]
-    );
+  const handleToggleFavorite = async (productId) => {
+    const normalizedProductId = normalizeFavoriteId(productId);
+    const previousFavorites = favoriteIds;
+    const nextFavorites = previousFavorites.includes(normalizedProductId)
+      ? previousFavorites.filter((id) => id !== normalizedProductId)
+      : [...previousFavorites, normalizedProductId];
+
+    setFavoriteIds(nextFavorites);
+
+    try {
+      const response = await updateMyFavorites(nextFavorites);
+      setFavoriteIds(Array.isArray(response?.favorites) ? response.favorites : nextFavorites);
+    } catch (favoritesError) {
+      console.error('Error al guardar favoritos del usuario:', favoritesError);
+      setFavoriteIds(previousFavorites);
+    }
   };
 
-  const favoriteProductsCount = products.filter((product) => favoriteIds.includes(product.id)).length;
+  const favoriteProductsCount = products.filter((product) => favoriteIds.includes(normalizeFavoriteId(product.id))).length;
 
   return (
     <section className="content">
@@ -236,7 +284,7 @@ export default function ProductsGrid({ mode = 'catalog', selectedCategory = 'caf
               key={product.id}
               product={product} 
               onClick={handleShowDetail}
-              isFavorite={favoriteIds.includes(product.id)}
+              isFavorite={favoriteIds.includes(normalizeFavoriteId(product.id))}
               onToggleFavorite={handleToggleFavorite}
             />
           ))

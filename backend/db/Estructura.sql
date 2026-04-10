@@ -108,6 +108,7 @@ CREATE TABLE public.users (
   last_login timestamp without time zone,
   active boolean DEFAULT true,
   alias character varying,
+  favoritos text[] DEFAULT '{}'::text[],
   CONSTRAINT users_pkey PRIMARY KEY (id)
 );
 CREATE TABLE public.vinculos_familiares (
