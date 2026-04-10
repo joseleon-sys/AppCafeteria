@@ -152,6 +152,14 @@ export async function rejectParentLinkRequest(requestId, reason) {
   }, { auth: true, contentType: true });
 }
 
+export async function getMyParentLinks() {
+  return apiRequest('/api/child/my-parents', {}, { auth: true });
+}
+
+export async function getMyChildrenLinks() {
+  return apiRequest('/api/parent/my-children', {}, { auth: true });
+}
+
 export async function createChildOrder(items, notes = '', parentId = null) {
   return apiRequest('/api/child/orders', {
     method: 'POST',

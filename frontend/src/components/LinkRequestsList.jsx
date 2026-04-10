@@ -3,7 +3,7 @@ import { showSuccess, showError } from './Toast';
 import { showConfirm, showPrompt } from './Dialog';
 import { approveParentLinkRequest, getParentLinkRequests, rejectParentLinkRequest } from '../lib/api';
 
-export default function LinkRequestsList() {
+export default function LinkRequestsList({ onChange = null }) {
   const [requests, setRequests] = useState([]);
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState(null);
@@ -32,6 +32,9 @@ export default function LinkRequestsList() {
     try {
       await approveParentLinkRequest(requestId, 20.0);
       showSuccess('Vinculación aprobada correctamente');
+      if (typeof onChange === 'function') {
+        await onChange();
+      }
       fetchRequests();
     } catch (error) {
       console.error('Error:', error);
@@ -49,6 +52,9 @@ export default function LinkRequestsList() {
     try {
       await rejectParentLinkRequest(requestId, reason);
       showSuccess('Vinculación rechazada');
+      if (typeof onChange === 'function') {
+        await onChange();
+      }
       fetchRequests();
     } catch (error) {
       console.error('Error:', error);

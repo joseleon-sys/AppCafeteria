@@ -149,6 +149,9 @@ export default function HistoryModal({ isOpen, onClose, user }) {
                         </svg>
                         {formatDate(order.date)} • {formatTime(order.date)}
                       </div>
+                      {order.childName && (
+                        <div className="order-summary">Para: {order.childName}</div>
+                      )}
                       <div className="order-summary">{order.summary}</div>
                     </div>
                     <div className="order-card-footer">
@@ -199,6 +202,12 @@ export default function HistoryModal({ isOpen, onClose, user }) {
                     {getStatusLabel(selectedOrder.status).toUpperCase()}
                   </span>
                 </div>
+                {selectedOrder.childName && (
+                  <div className="ticket-info-row">
+                    <span className="ticket-label">Perfil:</span>
+                    <span className="ticket-value">{selectedOrder.childName}</span>
+                  </div>
+                )}
               </div>
 
               <div className="ticket-divider"></div>

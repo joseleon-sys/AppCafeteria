@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import "./ProfileModal.css";
-import { updateProfileAlias } from "../lib/api";
+import { getMyChildrenLinks, getMyParentLinks, updateProfileAlias } from "../lib/api";
 import { showError, showSuccess } from "./Toast";
 import LinkRequestsList from "./LinkRequestsList";
 import { buildAchievementsFromOrders, buildProfileStatsFromOrders, fetchOrderHistoryForUser } from "../lib/orderService";
@@ -12,6 +12,8 @@ export default function ProfileModal({ isOpen, onClose, user, onLogout, onUserUp
   const [aliasMessage, setAliasMessage] = useState('');
   const [profileStats, setProfileStats] = useState(() => buildProfileStatsFromOrders([], user));
   const [achievements, setAchievements] = useState(() => buildAchievementsFromOrders([]));
+  const [familyLinks, setFamilyLinks] = useState([]);
+  const [familyLoading, setFamilyLoading] = useState(false);
 
   React.useEffect(() => {
     setAliasInput(user?.alias || '');
@@ -47,6 +49,32 @@ export default function ProfileModal({ isOpen, onClose, user, onLogout, onUserUp
     };
   }, [isOpen, user]);
 
+  const loadFamilyData = React.useCallback(async () => {
+    if (!user || !isOpen) return;
+
+    setFamilyLoading(true);
+    try {
+      if (user?.isAdult && user?.role !== 'admin') {
+        const data = await getMyChildrenLinks();
+        setFamilyLinks(data.children || []);
+      } else {
+        const data = await getMyParentLinks();
+        setFamilyLinks(data.parents || []);
+      }
+    } catch (error) {
+      console.error('Error cargando familiares vinculados:', error);
+      setFamilyLinks([]);
+      showError(error.message || 'No se pudieron cargar los familiares vinculados');
+    } finally {
+      setFamilyLoading(false);
+    }
+  }, [isOpen, user]);
+
+  React.useEffect(() => {
+    if (activeTab !== 'family' || !isOpen || !user) return;
+    loadFamilyData();
+  }, [activeTab, isOpen, user, loadFamilyData]);
+
   const realName = user?.name || 'Usuario';
   const visibleAlias = user?.alias ? `@${user.alias}` : null;
   const roleLabel = user?.role === 'admin'
@@ -56,6 +84,7 @@ export default function ProfileModal({ isOpen, onClose, user, onLogout, onUserUp
       : user?.isAdult
         ? 'Adulto'
         : 'Cliente';
+  const familyTitle = user?.isAdult && user?.role !== 'admin' ? 'Familiares vinculados' : 'Padres y tutores vinculados';
 
   // Calcular fecha de miembro
   const formatMemberDate = (dateString) => {
@@ -293,13 +322,62 @@ export default function ProfileModal({ isOpen, onClose, user, onLogout, onUserUp
                   {user?.isAdult && user?.role !== 'admin' && (
                     <div className="linked-users" style={{ marginTop: 16 }}>
                       <h5 className="linked-title">Solicitudes pendientes</h5>
-                      <LinkRequestsList />
+                      <LinkRequestsList onChange={loadFamilyData} />
                     </div>
                   )}
 
                   <div className="linked-users">
-                    <h5 className="linked-title">Familiares vinculados</h5>
-                    <p className="linked-empty">Aún no tienes familiares vinculados</p>
+                    <div className="linked-header">
+                      <h5 className="linked-title">{familyTitle}</h5>
+                      <button
+                        type="button"
+                        className="linked-refresh-btn"
+                        onClick={loadFamilyData}
+                        disabled={familyLoading}
+                      >
+                        {familyLoading ? 'Cargando...' : 'Actualizar'}
+                      </button>
+                    </div>
+
+                    {familyLoading ? (
+                      <p className="linked-empty">Cargando familiares vinculados...</p>
+                    ) : familyLinks.length === 0 ? (
+                      <p className="linked-empty">Aún no tienes familiares vinculados</p>
+                    ) : (
+                      <div className="linked-list">
+                        {familyLinks.map((link) => {
+                          const relative = link.child || link.parent;
+                          const statusLabel = link.status === 'active'
+                            ? 'Activo'
+                            : link.status === 'pending'
+                              ? 'Pendiente'
+                              : link.status;
+
+                          return (
+                            <div key={link.id} className="linked-card">
+                              <div className="linked-card-main">
+                                <div className="linked-card-name">
+                                  {relative?.name || 'Usuario'}
+                                </div>
+                                <div className="linked-card-email">
+                                  {relative?.email || 'Sin email disponible'}
+                                </div>
+                              </div>
+                              <div className="linked-card-meta">
+                                <span className={`linked-status linked-status-${link.status}`}>
+                                  {statusLabel}
+                                </span>
+                                {typeof link.spending_limit !== 'undefined' && link.child && (
+                                  <span className="linked-limit">
+                                    Limite: {Number(link.spending_limit).toFixed(2)} EUR
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>

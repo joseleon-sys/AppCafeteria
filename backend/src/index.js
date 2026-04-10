@@ -620,6 +620,73 @@ function formatFullName(value = '') {
     .join(' ');
 }
 
+function normalizeRelatedUser(user = null) {
+  if (!user || typeof user !== 'object') {
+    return null;
+  }
+
+  return {
+    ...user,
+    name: user.name || user.nombre || null,
+    email: user.email || null
+  };
+}
+
+function parsePositiveInteger(value, fallback) {
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+}
+
+function normalizeOrderStatus(status) {
+  const normalized = String(status || '').trim().toLowerCase();
+
+  if (['pagado', 'paid', 'completada', 'completado', 'completed'].includes(normalized)) {
+    return 'paid';
+  }
+  if (['pendiente', 'pending', 'procesando', 'processing'].includes(normalized)) {
+    return 'pending';
+  }
+  if (['aprobado', 'approved'].includes(normalized)) {
+    return 'approved';
+  }
+  if (['rechazado', 'rejected', 'cancelado', 'cancelled'].includes(normalized)) {
+    return 'rejected';
+  }
+
+  return normalized || 'pending';
+}
+
+function buildOrderStatusAliases(status) {
+  const normalized = normalizeOrderStatus(status);
+
+  const aliases = {
+    paid: ['paid', 'pagado', 'completed', 'completado', 'completada'],
+    pending: ['pending', 'pendiente', 'procesando', 'processing'],
+    approved: ['approved', 'aprobado'],
+    rejected: ['rejected', 'rechazado', 'cancelado', 'cancelled']
+  };
+
+  return aliases[normalized] || [normalized];
+}
+
+function normalizeHistoricOrderEntry(order = {}) {
+  const items = Array.isArray(order.items) ? order.items : [];
+  const parsedTotal = Number.parseFloat(order.total ?? 0);
+
+  return {
+    ...order,
+    status: normalizeOrderStatus(order.status || order.estado),
+    created_at: order.created_at || order.fecha_creacion || new Date().toISOString(),
+    total: Number.isFinite(parsedTotal) ? parsedTotal : 0,
+    items_count: Number.parseInt(order.items_count, 10) || items.length || 0,
+    items
+  };
+}
+
+function isUuidLike(value) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || '').trim());
+}
+
 function isValidFullName(value = '') {
   const normalized = normalizeNameSpaces(value);
   const words = normalized.split(' ').filter(Boolean);
@@ -1247,55 +1314,153 @@ app.post('/api/orders', authenticateToken, async (req, res) => {
 });
 
 app.get('/api/orders/my', authenticateToken, async (req, res) => {
-  const { status, limit = 50 } = req.query;
+  const { status } = req.query;
+  const limit = parsePositiveInteger(req.query.limit, 50);
+  const normalizedStatuses = buildOrderStatusAliases(status);
 
   if (req.user.role === 'child') {
     return res.status(403).json({ error: 'Los perfiles de menor deben consultar sus pedidos infantiles' });
   }
 
   try {
-    if (supabase) {
+    if (supabase && isUuidLike(req.user.id)) {
       let query = supabase
-        .from('orders')
-        .select('*')
-        .eq('user_id', req.user.id)
-        .order('created_at', { ascending: false })
+        .from('pedidos')
+        .select(`
+          id,
+          estado,
+          fecha_creacion,
+          id_perfil,
+          id_pagador,
+          lineas_pedido (
+            id,
+            id_producto_menu,
+            nombre_producto,
+            precio_compra,
+            notas
+          )
+        `)
+        .or(`id_perfil.eq.${req.user.id},id_pagador.eq.${req.user.id}`)
+        .order('fecha_creacion', { ascending: false })
         .limit(limit);
 
-      if (status) {
-        query = query.eq('status', status);
-      }
-
-      const { data: orders, error } = await query;
+      const { data, error } = await query;
       if (error) throw error;
 
-      const ordersWithCounts = await Promise.all((orders || []).map(async (order) => {
-        const { count } = await supabase
-          .from('order_items')
-          .select('*', { count: 'exact', head: true })
-          .eq('order_id', order.id);
+      const orders = (data || [])
+        .map((order) => {
+          const items = Array.isArray(order.lineas_pedido)
+            ? order.lineas_pedido.map((item) => {
+                const price = Number.parseFloat(item.precio_compra ?? 0) || 0;
+                return {
+                  id: item.id,
+                  product_id: item.id_producto_menu,
+                  product_name: item.nombre_producto || 'Producto',
+                  quantity: 1,
+                  price,
+                  subtotal: price,
+                  notes: item.notas || ''
+                };
+              })
+            : [];
+
+          return normalizeHistoricOrderEntry({
+            id: order.id,
+            status: order.estado,
+            created_at: order.fecha_creacion,
+            items,
+            items_count: items.length,
+            total: items.reduce((sum, item) => sum + item.subtotal, 0)
+          });
+        })
+        .filter((order) => !status || normalizedStatuses.includes(order.status));
+
+      return res.json({ orders });
+    }
+
+    const pedidosTableExists = await pool.query(
+      `SELECT EXISTS (
+         SELECT 1
+         FROM information_schema.tables
+         WHERE table_schema = 'public' AND table_name = 'pedidos'
+       ) AS exists`
+    );
+
+    if (pedidosTableExists.rows[0]?.exists) {
+      const params = [String(req.user.id)];
+      let paramIndex = 2;
+      let query = `
+        SELECT
+          p.id,
+          p.estado,
+          p.fecha_creacion,
+          COALESCE(SUM(COALESCE(lp.precio_compra, 0)), 0) AS total,
+          COUNT(lp.id) AS items_count,
+          COALESCE(
+            json_agg(
+              json_build_object(
+                'id', lp.id,
+                'product_id', lp.id_producto_menu,
+                'product_name', lp.nombre_producto,
+                'quantity', 1,
+                'price', COALESCE(lp.precio_compra, 0),
+                'subtotal', COALESCE(lp.precio_compra, 0),
+                'notes', COALESCE(lp.notas, '')
+              )
+            ) FILTER (WHERE lp.id IS NOT NULL),
+            '[]'::json
+          ) AS items
+        FROM pedidos p
+        LEFT JOIN lineas_pedido lp ON lp.id_pedido = p.id
+        WHERE (p.id_perfil::text = $1 OR p.id_pagador::text = $1)
+      `;
+
+      if (status) {
+        query += ` AND LOWER(COALESCE(p.estado, '')) = ANY($${paramIndex})`;
+        params.push(normalizedStatuses);
+        paramIndex++;
+      }
+
+      query += `
+        GROUP BY p.id, p.estado, p.fecha_creacion
+        ORDER BY p.fecha_creacion DESC
+        LIMIT $${paramIndex}
+      `;
+      params.push(limit);
+
+      const result = await pool.query(query, params);
+      return res.json({
+        orders: (result.rows || []).map((row) => normalizeHistoricOrderEntry({
+          id: row.id,
+          status: row.estado,
+          created_at: row.fecha_creacion,
+          total: row.total,
+          items_count: row.items_count,
+          items: Array.isArray(row.items) ? row.items : []
+        }))
+      });
+    }
+
+    if (status) {
+      const params = [req.user.id, status, limit];
+      const query = 'SELECT * FROM orders WHERE user_id = $1 AND status = $2 ORDER BY created_at DESC LIMIT $3';
+      const result = await pool.query(query, params);
+      const ordersWithCounts = await Promise.all((result.rows || []).map(async (order) => {
+        const itemsResult = await pool.query(
+          'SELECT COUNT(*) AS count FROM order_items WHERE order_id = $1',
+          [order.id]
+        );
 
         return {
           ...order,
-          items_count: count || 0
+          items_count: Number.parseInt(itemsResult.rows[0]?.count, 10) || 0
         };
       }));
 
       return res.json({ orders: ordersWithCounts });
     }
 
-    const params = [req.user.id];
-    let query = 'SELECT * FROM orders WHERE user_id = $1';
-
-    if (status) {
-      params.push(status);
-      query += ` AND status = $${params.length}`;
-    }
-
-    params.push(limit);
-    query += ` ORDER BY created_at DESC LIMIT $${params.length}`;
-
-    const result = await pool.query(query, params);
+    const result = await pool.query('SELECT * FROM orders WHERE user_id = $1 ORDER BY created_at DESC LIMIT $2', [req.user.id, limit]);
     const ordersWithCounts = await Promise.all((result.rows || []).map(async (order) => {
       const itemsResult = await pool.query(
         'SELECT COUNT(*) AS count FROM order_items WHERE order_id = $1',
@@ -1316,9 +1481,9 @@ app.get('/api/orders/my', authenticateToken, async (req, res) => {
 });
 
 app.get('/api/orders/:id', authenticateToken, async (req, res) => {
-  const orderId = Number.parseInt(req.params.id, 10);
+  const orderId = String(req.params.id || '').trim();
 
-  if (Number.isNaN(orderId)) {
+  if (!orderId) {
     return res.status(400).json({ error: 'ID de pedido invalido' });
   }
 
@@ -1327,14 +1492,27 @@ app.get('/api/orders/:id', authenticateToken, async (req, res) => {
   }
 
   try {
-    if (supabase) {
+    if (supabase && isUuidLike(req.user.id)) {
       let query = supabase
-        .from('orders')
-        .select('*')
+        .from('pedidos')
+        .select(`
+          id,
+          estado,
+          fecha_creacion,
+          id_perfil,
+          id_pagador,
+          lineas_pedido (
+            id,
+            id_producto_menu,
+            nombre_producto,
+            precio_compra,
+            notas
+          )
+        `)
         .eq('id', orderId);
 
       if (req.user.role !== 'admin') {
-        query = query.eq('user_id', req.user.id);
+        query = query.or(`id_perfil.eq.${req.user.id},id_pagador.eq.${req.user.id}`);
       }
 
       const { data: order, error } = await query.single();
@@ -1342,22 +1520,104 @@ app.get('/api/orders/:id', authenticateToken, async (req, res) => {
         return res.status(404).json({ error: 'Pedido no encontrado' });
       }
 
-      const { data: items, error: itemsError } = await supabase
-        .from('order_items')
-        .select('*')
-        .eq('order_id', order.id);
-
-      if (itemsError) throw itemsError;
+      const items = Array.isArray(order.lineas_pedido)
+        ? order.lineas_pedido.map((item) => {
+            const price = Number.parseFloat(item.precio_compra ?? 0) || 0;
+            return {
+              id: item.id,
+              product_id: item.id_producto_menu,
+              product_name: item.nombre_producto || 'Producto',
+              quantity: 1,
+              price,
+              subtotal: price,
+              notes: item.notas || ''
+            };
+          })
+        : [];
 
       return res.json({
-        order: {
-          ...order,
-          items: items || []
-        }
+        order: normalizeHistoricOrderEntry({
+          id: order.id,
+          status: order.estado,
+          created_at: order.fecha_creacion,
+          items,
+          items_count: items.length,
+          total: items.reduce((sum, item) => sum + item.subtotal, 0)
+        })
       });
     }
 
-    const params = [orderId];
+    const pedidosTableExists = await pool.query(
+      `SELECT EXISTS (
+         SELECT 1
+         FROM information_schema.tables
+         WHERE table_schema = 'public' AND table_name = 'pedidos'
+       ) AS exists`
+    );
+
+    if (pedidosTableExists.rows[0]?.exists) {
+      const params = [orderId];
+      let query = `
+        SELECT
+          p.id,
+          p.estado,
+          p.fecha_creacion,
+          COALESCE(SUM(COALESCE(lp.precio_compra, 0)), 0) AS total,
+          COUNT(lp.id) AS items_count,
+          COALESCE(
+            json_agg(
+              json_build_object(
+                'id', lp.id,
+                'product_id', lp.id_producto_menu,
+                'product_name', lp.nombre_producto,
+                'quantity', 1,
+                'price', COALESCE(lp.precio_compra, 0),
+                'subtotal', COALESCE(lp.precio_compra, 0),
+                'notes', COALESCE(lp.notas, '')
+              )
+            ) FILTER (WHERE lp.id IS NOT NULL),
+            '[]'::json
+          ) AS items
+        FROM pedidos p
+        LEFT JOIN lineas_pedido lp ON lp.id_pedido = p.id
+        WHERE p.id::text = $1
+      `;
+
+      if (req.user.role !== 'admin') {
+        params.push(String(req.user.id));
+        query += ` AND (p.id_perfil::text = $2 OR p.id_pagador::text = $2)`;
+      }
+
+      query += `
+        GROUP BY p.id, p.estado, p.fecha_creacion
+        LIMIT 1
+      `;
+
+      const orderResult = await pool.query(query, params);
+      const order = orderResult.rows[0];
+
+      if (!order) {
+        return res.status(404).json({ error: 'Pedido no encontrado' });
+      }
+
+      return res.json({
+        order: normalizeHistoricOrderEntry({
+          id: order.id,
+          status: order.estado,
+          created_at: order.fecha_creacion,
+          total: order.total,
+          items_count: order.items_count,
+          items: Array.isArray(order.items) ? order.items : []
+        })
+      });
+    }
+
+    const numericOrderId = Number.parseInt(orderId, 10);
+    if (Number.isNaN(numericOrderId)) {
+      return res.status(400).json({ error: 'ID de pedido invalido' });
+    }
+
+    const params = [numericOrderId];
     let query = 'SELECT * FROM orders WHERE id = $1';
 
     if (req.user.role !== 'admin') {
@@ -1543,7 +1803,7 @@ app.post('/api/child/link-parent', authenticateToken, linkingRateLimiter, async 
         .eq('parent_token', normalizedParentToken)
         .single();
 
-      parent = parentData;
+      parent = normalizeRelatedUser(parentData);
     } else {
       const childResult = await pool.query(
         'SELECT id, role, is_adult, email FROM users WHERE id = $1 AND active = true LIMIT 1',
@@ -1658,7 +1918,7 @@ app.post('/api/child/link-parent', authenticateToken, linkingRateLimiter, async 
       message: 'Solicitud de vinculación enviada',
       link: {
         id: link.id,
-        parentName: parent.name,
+        parentName: parent?.name || null,
         status: link.status
       }
     });
@@ -1711,7 +1971,12 @@ app.get('/api/parent/link-requests', authenticateToken, async (req, res) => {
         .order('requested_at', { ascending: false });
 
       if (error) throw error;
-      return res.json({ requests: requests || [] });
+      return res.json({
+        requests: (requests || []).map((request) => ({
+          ...request,
+          child: normalizeRelatedUser(request.child)
+        }))
+      });
     }
 
     const result = await pool.query(
@@ -1746,13 +2011,15 @@ app.put('/api/parent/link-requests/:id/approve', authenticateToken, async (req, 
     let updated = null;
 
     if (supabase) {
-      const { data: linkData } = await supabase
+      const { data: linkData, error: linkError } = await supabase
         .from('parent_child_links')
-        .select('*, child:child_id(name, email)')
+        .select('*, child:child_id(id, nombre, email)')
         .eq('id', linkId)
         .eq('parent_id', parentId)
         .eq('status', 'pending')
         .single();
+
+      if (linkError) throw linkError;
 
       if (!linkData) {
         return res.status(404).json({ error: 'Solicitud no encontrada' });
@@ -1920,7 +2187,12 @@ app.get('/api/child/my-parents', authenticateToken, async (req, res) => {
         .in('status', ['active', 'pending']);
 
       if (error) throw error;
-      return res.json({ parents: links || [] });
+      return res.json({
+        parents: (links || []).map((link) => ({
+          ...link,
+          parent: normalizeRelatedUser(link.parent)
+        }))
+      });
     }
 
     const result = await pool.query(
@@ -1987,7 +2259,12 @@ app.get('/api/parent/my-children', authenticateToken, async (req, res) => {
         .eq('status', 'active');
 
       if (error) throw error;
-      return res.json({ children: links || [] });
+      return res.json({
+        children: (links || []).map((link) => ({
+          ...link,
+          child: normalizeRelatedUser(link.child)
+        }))
+      });
     }
 
     const result = await pool.query(
@@ -2800,7 +3077,7 @@ app.get('/api/admin/orders/queue', authenticateToken, requireAdmin, async (req, 
     if (supabase) {
       const { data: orders, error } = await supabase
         .from('child_orders')
-        .select('*, child:child_id(id, name, email)')
+        .select('*, child:child_id(id, nombre, email)')
         .in('status', ['pending', 'approved'])
         .order('created_at', { ascending: false })
         .limit(100);
@@ -3041,77 +3318,159 @@ app.get('/api/child/orders', authenticateToken, async (req, res) => {
   }
 
   const { status } = req.query;
+  const normalizedStatuses = buildOrderStatusAliases(status);
 
   try {
-    if (supabase) {
-      let query = supabase
-        .from('child_orders')
-        .select('*, parent:parent_id(name, email)')
-        .eq('child_id', req.user.id)
-        .order('created_at', { ascending: false });
+    if (supabase && isUuidLike(req.user.id)) {
+      const { data, error } = await supabase
+        .from('pedidos')
+        .select(`
+          id,
+          estado,
+          fecha_creacion,
+          id_perfil,
+          lineas_pedido (
+            id,
+            id_producto_menu,
+            nombre_producto,
+            precio_compra,
+            notas
+          )
+        `)
+        .eq('id_perfil', req.user.id)
+        .order('fecha_creacion', { ascending: false });
 
-      if (status) {
-        query = query.eq('status', status);
-      }
-
-      const { data: orders, error } = await query;
       if (error) throw error;
 
-      // Obtener items de cada pedido
-      const ordersWithItems = await Promise.all(orders.map(async (order) => {
-        const { data: items } = await supabase
-          .from('child_order_items')
-          .select('*')
-          .eq('order_id', order.id);
+      const orders = (data || [])
+        .map((order) => {
+          const items = Array.isArray(order.lineas_pedido)
+            ? order.lineas_pedido.map((item) => {
+                const price = Number.parseFloat(item.precio_compra ?? 0) || 0;
+                return {
+                  id: item.id,
+                  product_id: item.id_producto_menu,
+                  product_name: item.nombre_producto || 'Producto',
+                  quantity: 1,
+                  price,
+                  subtotal: price,
+                  notes: item.notas || ''
+                };
+              })
+            : [];
 
-        return {
-          ...order,
-          items_count: items?.length || 0
-        };
-      }));
+          return normalizeHistoricOrderEntry({
+            id: order.id,
+            status: order.estado,
+            created_at: order.fecha_creacion,
+            items,
+            items_count: items.length,
+            total: items.reduce((sum, item) => sum + item.subtotal, 0)
+          });
+        })
+        .filter((order) => !status || normalizedStatuses.includes(order.status));
 
-      return res.json({ orders: ordersWithItems });
-    } else {
-      // PostgreSQL fallback
-      const orders = await new Promise((resolve, reject) => {
-        let query = 'SELECT co.*, u.nombre as parent_name, u.email as parent_email FROM child_orders co LEFT JOIN users u ON co.parent_id = u.id WHERE co.child_id = $1';
-        const params = [req.user.id];
+      return res.json({ orders });
+    }
 
-        if (status) {
-          query += ' AND co.status = $2';
-          params.push(status);
-        }
+    const pedidosTableExists = await pool.query(
+      `SELECT EXISTS (
+         SELECT 1
+         FROM information_schema.tables
+         WHERE table_schema = 'public' AND table_name = 'pedidos'
+       ) AS exists`
+    );
 
-        query += ' ORDER BY co.created_at DESC';
+    if (pedidosTableExists.rows[0]?.exists) {
+      const params = [String(req.user.id)];
+      let paramIndex = 2;
+      let query = `
+        SELECT
+          p.id,
+          p.estado,
+          p.fecha_creacion,
+          COALESCE(SUM(COALESCE(lp.precio_compra, 0)), 0) AS total,
+          COUNT(lp.id) AS items_count,
+          COALESCE(
+            json_agg(
+              json_build_object(
+                'id', lp.id,
+                'product_id', lp.id_producto_menu,
+                'product_name', lp.nombre_producto,
+                'quantity', 1,
+                'price', COALESCE(lp.precio_compra, 0),
+                'subtotal', COALESCE(lp.precio_compra, 0),
+                'notes', COALESCE(lp.notas, '')
+              )
+            ) FILTER (WHERE lp.id IS NOT NULL),
+            '[]'::json
+          ) AS items
+        FROM pedidos p
+        LEFT JOIN lineas_pedido lp ON lp.id_pedido = p.id
+        WHERE p.id_perfil::text = $1
+      `;
 
-        pool.query(query, params, (err, result) => {
-          if (err) return reject(err);
-          resolve(result.rows);
-        });
+      if (status) {
+        query += ` AND LOWER(COALESCE(p.estado, '')) = ANY($${paramIndex})`;
+        params.push(normalizedStatuses);
+        paramIndex++;
+      }
+
+      query += `
+        GROUP BY p.id, p.estado, p.fecha_creacion
+        ORDER BY p.fecha_creacion DESC
+      `;
+
+      const result = await pool.query(query, params);
+      return res.json({
+        orders: (result.rows || []).map((row) => normalizeHistoricOrderEntry({
+          id: row.id,
+          status: row.estado,
+          created_at: row.fecha_creacion,
+          total: row.total,
+          items_count: row.items_count,
+          items: Array.isArray(row.items) ? row.items : []
+        }))
+      });
+    }
+
+    const orders = await new Promise((resolve, reject) => {
+      let query = 'SELECT co.*, u.nombre as parent_name, u.email as parent_email FROM child_orders co LEFT JOIN users u ON co.parent_id = u.id WHERE co.child_id = $1';
+      const params = [req.user.id];
+
+      if (status) {
+        query += ' AND co.status = $2';
+        params.push(status);
+      }
+
+      query += ' ORDER BY co.created_at DESC';
+
+      pool.query(query, params, (err, result) => {
+        if (err) return reject(err);
+        resolve(result.rows);
+      });
+    });
+
+    const ordersWithItems = await Promise.all(orders.map(async (order) => {
+      const items = await new Promise((resolve, reject) => {
+        pool.query(
+          'SELECT COUNT(*) as count FROM child_order_items WHERE order_id = $1',
+          [order.id],
+          (err, result) => {
+            if (err) return reject(err);
+            resolve(result.rows[0]);
+          }
+        );
       });
 
-      // Obtener items count de cada pedido
-      const ordersWithItems = await Promise.all(orders.map(async (order) => {
-        const items = await new Promise((resolve, reject) => {
-          pool.query(
-            'SELECT COUNT(*) as count FROM child_order_items WHERE order_id = $1',
-            [order.id],
-            (err, result) => {
-              if (err) return reject(err);
-              resolve(result.rows[0]);
-            }
-          );
-        });
+      return normalizeHistoricOrderEntry({
+        ...order,
+        parent: { name: order.parent_name, email: order.parent_email },
+        items_count: parseInt(items.count, 10)
+      });
+    }));
 
-        return {
-          ...order,
-          parent: { name: order.parent_name, email: order.parent_email },
-          items_count: parseInt(items.count)
-        };
-      }));
-
-      return res.json({ orders: ordersWithItems });
-    }
+    return res.json({ orders: ordersWithItems });
   } catch (error) {
     console.error('Error fetching child orders:', error);
     return res.status(500).json({ error: 'Error al obtener pedidos' });
@@ -3124,71 +3483,154 @@ app.get('/api/child/orders/:id', authenticateToken, async (req, res) => {
     return res.status(403).json({ error: 'Solo los hijos pueden ver detalles de pedidos' });
   }
 
-  const { id } = req.params;
+  const id = String(req.params.id || '').trim();
 
   try {
-    if (supabase) {
+    if (supabase && isUuidLike(req.user.id)) {
       const { data: order, error } = await supabase
-        .from('child_orders')
-        .select('*, parent:parent_id(id, name, email)')
+        .from('pedidos')
+        .select(`
+          id,
+          estado,
+          fecha_creacion,
+          id_perfil,
+          lineas_pedido (
+            id,
+            id_producto_menu,
+            nombre_producto,
+            precio_compra,
+            notas
+          )
+        `)
         .eq('id', id)
-        .eq('child_id', req.user.id)
+        .eq('id_perfil', req.user.id)
         .single();
 
       if (error || !order) {
         return res.status(404).json({ error: 'Pedido no encontrado' });
       }
 
-      const { data: items } = await supabase
-        .from('child_order_items')
-        .select('*')
-        .eq('order_id', order.id);
+      const items = Array.isArray(order.lineas_pedido)
+        ? order.lineas_pedido.map((item) => {
+            const price = Number.parseFloat(item.precio_compra ?? 0) || 0;
+            return {
+              id: item.id,
+              product_id: item.id_producto_menu,
+              product_name: item.nombre_producto || 'Producto',
+              quantity: 1,
+              price,
+              subtotal: price,
+              notes: item.notas || ''
+            };
+          })
+        : [];
 
       return res.json({
-        order: {
-          ...order,
-          items: items || []
-        }
+        order: normalizeHistoricOrderEntry({
+          id: order.id,
+          status: order.estado,
+          created_at: order.fecha_creacion,
+          items,
+          items_count: items.length,
+          total: items.reduce((sum, item) => sum + item.subtotal, 0)
+        })
       });
-    } else {
-      // PostgreSQL fallback
-      const order = await new Promise((resolve, reject) => {
-        pool.query(
-          `SELECT co.*, u.id as parent_id, u.nombre as parent_name, u.email as parent_email 
-           FROM child_orders co 
-           LEFT JOIN users u ON co.parent_id = u.id 
-           WHERE co.id = $1 AND co.child_id = $2`,
-          [id, req.user.id],
-          (err, result) => {
-            if (err) return reject(err);
-            resolve(result.rows[0]);
-          }
-        );
-      });
+    }
 
+    const pedidosTableExists = await pool.query(
+      `SELECT EXISTS (
+         SELECT 1
+         FROM information_schema.tables
+         WHERE table_schema = 'public' AND table_name = 'pedidos'
+       ) AS exists`
+    );
+
+    if (pedidosTableExists.rows[0]?.exists) {
+      const result = await pool.query(
+        `
+          SELECT
+            p.id,
+            p.estado,
+            p.fecha_creacion,
+            COALESCE(SUM(COALESCE(lp.precio_compra, 0)), 0) AS total,
+            COUNT(lp.id) AS items_count,
+            COALESCE(
+              json_agg(
+                json_build_object(
+                  'id', lp.id,
+                  'product_id', lp.id_producto_menu,
+                  'product_name', lp.nombre_producto,
+                  'quantity', 1,
+                  'price', COALESCE(lp.precio_compra, 0),
+                  'subtotal', COALESCE(lp.precio_compra, 0),
+                  'notes', COALESCE(lp.notas, '')
+                )
+              ) FILTER (WHERE lp.id IS NOT NULL),
+              '[]'::json
+            ) AS items
+          FROM pedidos p
+          LEFT JOIN lineas_pedido lp ON lp.id_pedido = p.id
+          WHERE p.id::text = $1
+            AND p.id_perfil::text = $2
+          GROUP BY p.id, p.estado, p.fecha_creacion
+          LIMIT 1
+        `,
+        [id, String(req.user.id)]
+      );
+
+      const order = result.rows[0];
       if (!order) {
         return res.status(404).json({ error: 'Pedido no encontrado' });
       }
 
-      const items = await new Promise((resolve, reject) => {
-        pool.query(
-          'SELECT * FROM child_order_items WHERE order_id = $1',
-          [order.id],
-          (err, result) => {
-            if (err) return reject(err);
-            resolve(result.rows);
-          }
-        );
-      });
-
       return res.json({
-        order: {
-          ...order,
-          parent: { id: order.parent_id, name: order.parent_name, email: order.parent_email },
-          items: items || []
-        }
+        order: normalizeHistoricOrderEntry({
+          id: order.id,
+          status: order.estado,
+          created_at: order.fecha_creacion,
+          total: order.total,
+          items_count: order.items_count,
+          items: Array.isArray(order.items) ? order.items : []
+        })
       });
     }
+
+    const order = await new Promise((resolve, reject) => {
+      pool.query(
+        `SELECT co.*, u.id as parent_id, u.nombre as parent_name, u.email as parent_email 
+         FROM child_orders co 
+         LEFT JOIN users u ON co.parent_id = u.id 
+         WHERE co.id = $1 AND co.child_id = $2`,
+        [id, req.user.id],
+        (err, result) => {
+          if (err) return reject(err);
+          resolve(result.rows[0]);
+        }
+      );
+    });
+
+    if (!order) {
+      return res.status(404).json({ error: 'Pedido no encontrado' });
+    }
+
+    const items = await new Promise((resolve, reject) => {
+      pool.query(
+        'SELECT * FROM child_order_items WHERE order_id = $1',
+        [order.id],
+        (err, result) => {
+          if (err) return reject(err);
+          resolve(result.rows);
+        }
+      );
+    });
+
+    return res.json({
+      order: normalizeHistoricOrderEntry({
+        ...order,
+        parent: { id: order.parent_id, name: order.parent_name, email: order.parent_email },
+        items: items || []
+      })
+    });
   } catch (error) {
     console.error('Error fetching order detail:', error);
     return res.status(500).json({ error: 'Error al obtener detalle del pedido' });
@@ -3201,13 +3643,15 @@ app.get('/api/parent/child-orders', authenticateToken, async (req, res) => {
     return res.status(403).json({ error: 'Solo los padres pueden ver pedidos de hijos' });
   }
 
-  const { status, child_id, limit = 20, offset = 0 } = req.query;
+  const { status, child_id } = req.query;
+  const limit = parsePositiveInteger(req.query.limit, 20);
+  const offset = parsePositiveInteger(req.query.offset, 0);
 
   try {
     if (supabase) {
       let query = supabase
         .from('child_orders')
-        .select('*, child:child_id(id, name, email)')
+        .select('*, child:child_id(id, nombre, email)')
         .eq('parent_id', req.user.id)
         .order('created_at', { ascending: false })
         .range(offset, offset + limit - 1);
@@ -3231,6 +3675,7 @@ app.get('/api/parent/child-orders', authenticateToken, async (req, res) => {
 
         return {
           ...order,
+          child: normalizeRelatedUser(order.child),
           items_count: count || 0
         };
       }));
@@ -3305,7 +3750,7 @@ app.get('/api/parent/orders/:id', authenticateToken, async (req, res) => {
     if (supabase) {
       const { data: order, error } = await supabase
         .from('child_orders')
-        .select('*, child:child_id(id, name, email), link:link_id(spending_limit)')
+        .select('*, child:child_id(id, nombre, email), link:link_id(spending_limit)')
         .eq('id', id)
         .eq('parent_id', req.user.id)
         .single();
@@ -3322,6 +3767,7 @@ app.get('/api/parent/orders/:id', authenticateToken, async (req, res) => {
       return res.json({
         order: {
           ...order,
+          child: normalizeRelatedUser(order.child),
           items: items || [],
           spending_limit: order.link?.spending_limit || 0
         }
@@ -3789,109 +4235,227 @@ app.get('/api/parent/child-orders/history', authenticateToken, async (req, res) 
     return res.status(403).json({ error: 'Solo los padres pueden ver el historial' });
   }
 
-  const { child_id, status = 'paid', from_date, to_date, limit = 50 } = req.query;
+  const { child_id, status = 'paid', from_date, to_date } = req.query;
+  const limit = parsePositiveInteger(req.query.limit, 50);
+  const normalizedStatuses = buildOrderStatusAliases(status);
 
   try {
-    if (supabase) {
+    if (supabase && isUuidLike(req.user.id)) {
       let query = supabase
-        .from('child_orders')
-        .select('*, child:child_id(id, name, email)')
-        .eq('parent_id', req.user.id)
-        .order('created_at', { ascending: false })
+        .from('pedidos')
+        .select(`
+          id,
+          estado,
+          fecha_creacion,
+          id_perfil,
+          id_pagador,
+          perfiles:id_perfil (
+            id,
+            nombre_completo
+          ),
+          lineas_pedido (
+            id,
+            id_producto_menu,
+            nombre_producto,
+            precio_compra,
+            notas
+          )
+        `)
+        .eq('id_pagador', req.user.id)
+        .order('fecha_creacion', { ascending: false })
         .limit(limit);
 
       if (child_id) {
-        query = query.eq('child_id', child_id);
-      }
-      if (status) {
-        query = query.eq('status', status);
-      }
-      if (from_date) {
-        query = query.gte('created_at', from_date);
-      }
-      if (to_date) {
-        query = query.lte('created_at', to_date);
+        query = query.eq('id_perfil', child_id);
       }
 
-      const { data: orders, error } = await query;
+      const { data, error } = await query;
       if (error) throw error;
 
-      // Obtener items de cada pedido
-      const ordersWithItems = await Promise.all(orders.map(async (order) => {
-        const { data: items } = await supabase
-          .from('child_order_items')
-          .select('*')
-          .eq('order_id', order.id);
+      const orders = (data || [])
+        .map((order) => {
+          const items = Array.isArray(order.lineas_pedido)
+            ? order.lineas_pedido.map((item) => {
+                const price = Number.parseFloat(item.precio_compra ?? 0) || 0;
+                return {
+                  id: item.id,
+                  product_id: item.id_producto_menu,
+                  product_name: item.nombre_producto || 'Producto',
+                  quantity: 1,
+                  price,
+                  subtotal: price,
+                  notes: item.notas || ''
+                };
+              })
+            : [];
 
-        return {
-          ...order,
-          items: items || []
-        };
-      }));
+          return normalizeHistoricOrderEntry({
+            id: order.id,
+            status: order.estado,
+            created_at: order.fecha_creacion,
+            child: {
+              id: order.id_perfil,
+              name: order.perfiles?.nombre_completo || null
+            },
+            items,
+            items_count: items.length,
+            total: items.reduce((sum, item) => sum + item.subtotal, 0)
+          });
+        })
+        .filter((order) => normalizedStatuses.includes(order.status))
+        .filter((order) => !from_date || order.created_at >= from_date)
+        .filter((order) => !to_date || order.created_at <= to_date);
 
-      return res.json({ orders: ordersWithItems });
-    } else {
-      // PostgreSQL fallback
-      let query = `SELECT co.*, u.id as child_id, u.nombre as child_name, u.email as child_email 
-                   FROM child_orders co 
-                   LEFT JOIN users u ON co.child_id = u.id 
-                   WHERE co.parent_id = $1`;
-      const params = [req.user.id];
+      return res.json({ orders });
+    }
+
+    const pedidosTableExists = await pool.query(
+      `SELECT EXISTS (
+         SELECT 1
+         FROM information_schema.tables
+         WHERE table_schema = 'public' AND table_name = 'pedidos'
+       ) AS exists`
+    );
+
+    if (pedidosTableExists.rows[0]?.exists) {
+      const params = [String(req.user.id)];
       let paramIndex = 2;
+      let query = `
+        SELECT
+          p.id,
+          p.estado,
+          p.fecha_creacion,
+          p.id_perfil,
+          p.id_pagador,
+          perf.nombre_completo AS child_name,
+          COALESCE(SUM(COALESCE(lp.precio_compra, 0)), 0) AS total,
+          COUNT(lp.id) AS items_count,
+          COALESCE(
+            json_agg(
+              json_build_object(
+                'id', lp.id,
+                'product_id', lp.id_producto_menu,
+                'product_name', lp.nombre_producto,
+                'quantity', 1,
+                'price', COALESCE(lp.precio_compra, 0),
+                'subtotal', COALESCE(lp.precio_compra, 0),
+                'notes', COALESCE(lp.notas, '')
+              )
+            ) FILTER (WHERE lp.id IS NOT NULL),
+            '[]'::json
+          ) AS items
+        FROM pedidos p
+        LEFT JOIN lineas_pedido lp ON lp.id_pedido = p.id
+        LEFT JOIN perfiles perf ON perf.id = p.id_perfil
+        WHERE p.id_pagador::text = $1
+      `;
 
       if (child_id) {
-        query += ` AND co.child_id = $${paramIndex}`;
-        params.push(child_id);
+        query += ` AND p.id_perfil::text = $${paramIndex}`;
+        params.push(String(child_id));
         paramIndex++;
       }
+
       if (status) {
-        query += ` AND co.status = $${paramIndex}`;
-        params.push(status);
+        query += ` AND LOWER(COALESCE(p.estado, '')) = ANY($${paramIndex})`;
+        params.push(normalizedStatuses);
         paramIndex++;
       }
+
       if (from_date) {
-        query += ` AND co.created_at >= $${paramIndex}`;
+        query += ` AND p.fecha_creacion >= $${paramIndex}`;
         params.push(from_date);
         paramIndex++;
       }
+
       if (to_date) {
-        query += ` AND co.created_at <= $${paramIndex}`;
+        query += ` AND p.fecha_creacion <= $${paramIndex}`;
         params.push(to_date);
         paramIndex++;
       }
 
-      query += ` ORDER BY co.created_at DESC LIMIT $${paramIndex}`;
+      query += `
+        GROUP BY p.id, p.estado, p.fecha_creacion, p.id_perfil, p.id_pagador, perf.nombre_completo
+        ORDER BY p.fecha_creacion DESC
+        LIMIT $${paramIndex}
+      `;
       params.push(limit);
 
-      const orders = await new Promise((resolve, reject) => {
-        pool.query(query, params, (err, result) => {
-          if (err) return reject(err);
-          resolve(result.rows);
-        });
-      });
-
-      // Obtener items de cada pedido
-      const ordersWithItems = await Promise.all(orders.map(async (order) => {
-        const items = await new Promise((resolve, reject) => {
-          pool.query(
-            'SELECT * FROM child_order_items WHERE order_id = $1',
-            [order.id],
-            (err, result) => {
-              if (err) return reject(err);
-              resolve(result.rows);
-            }
-          );
-        });
-
-        return {
-          ...order,
-          child: { id: order.child_id, name: order.child_name, email: order.child_email },
-          items: items || []
-        };
+      const result = await pool.query(query, params);
+      const orders = (result.rows || []).map((row) => normalizeHistoricOrderEntry({
+        id: row.id,
+        status: row.estado,
+        created_at: row.fecha_creacion,
+        child: {
+          id: row.id_perfil,
+          name: row.child_name || null
+        },
+        total: row.total,
+        items_count: row.items_count,
+        items: Array.isArray(row.items) ? row.items : []
       }));
 
-      return res.json({ orders: ordersWithItems });
+      return res.json({ orders });
     }
+
+    let query = `SELECT co.*, u.id as child_id, u.nombre as child_name, u.email as child_email 
+                 FROM child_orders co 
+                 LEFT JOIN users u ON co.child_id = u.id 
+                 WHERE co.parent_id = $1`;
+    const params = [req.user.id];
+    let paramIndex = 2;
+
+    if (child_id) {
+      query += ` AND co.child_id = $${paramIndex}`;
+      params.push(child_id);
+      paramIndex++;
+    }
+    if (status) {
+      query += ` AND LOWER(COALESCE(co.status, '')) = ANY($${paramIndex})`;
+      params.push(normalizedStatuses);
+      paramIndex++;
+    }
+    if (from_date) {
+      query += ` AND co.created_at >= $${paramIndex}`;
+      params.push(from_date);
+      paramIndex++;
+    }
+    if (to_date) {
+      query += ` AND co.created_at <= $${paramIndex}`;
+      params.push(to_date);
+      paramIndex++;
+    }
+
+    query += ` ORDER BY co.created_at DESC LIMIT $${paramIndex}`;
+    params.push(limit);
+
+    const orders = await new Promise((resolve, reject) => {
+      pool.query(query, params, (err, result) => {
+        if (err) return reject(err);
+        resolve(result.rows);
+      });
+    });
+
+    const ordersWithItems = await Promise.all(orders.map(async (order) => {
+      const items = await new Promise((resolve, reject) => {
+        pool.query(
+          'SELECT * FROM child_order_items WHERE order_id = $1',
+          [order.id],
+          (err, result) => {
+            if (err) return reject(err);
+            resolve(result.rows);
+          }
+        );
+      });
+
+      return normalizeHistoricOrderEntry({
+        ...order,
+        child: { id: order.child_id, name: order.child_name, email: order.child_email },
+        items: items || []
+      });
+    }));
+
+    return res.json({ orders: ordersWithItems });
   } catch (error) {
     console.error('Error fetching order history:', error);
     return res.status(500).json({ error: 'Error al obtener historial' });

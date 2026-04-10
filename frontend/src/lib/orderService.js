@@ -73,21 +73,44 @@ function summarizeItems(items = []) {
   return `${items[0].product_name || items[0].name || 'Producto'} + ${items.length - 1} mas`;
 }
 
+function normalizeOrderStatus(status) {
+  const normalized = String(status || '').trim().toLowerCase();
+
+  if (['pagado', 'paid', 'completed', 'completado', 'completada'].includes(normalized)) {
+    return 'paid';
+  }
+  if (['pendiente', 'pending', 'procesando', 'processing'].includes(normalized)) {
+    return 'pending';
+  }
+  if (['aprobado', 'approved'].includes(normalized)) {
+    return 'approved';
+  }
+  if (['rechazado', 'rejected', 'cancelado', 'cancelled'].includes(normalized)) {
+    return 'rejected';
+  }
+
+  return normalized || 'pending';
+}
+
 function normalizeHistoryEntry(order, source) {
   const total = normalizeCurrency(order.total);
-  const createdAt = order.created_at || new Date().toISOString();
+  const createdAt = order.created_at || order.fecha_creacion || order.date || new Date().toISOString();
   const items = Array.isArray(order.items) ? order.items : [];
+  const child = order.child || null;
+  const childName = child?.name || child?.nombre || order.child_name || '';
+  const normalizedStatus = normalizeOrderStatus(order.status || order.estado);
 
   return {
     id: order.id,
     source,
     date: createdAt,
-    status: order.status,
+    status: normalizedStatus,
     total,
     itemsCount: order.items_count || items.length || 0,
     items,
     summary: summarizeItems(items),
     notes: order.notes || '',
+    childName,
   };
 }
 
@@ -123,7 +146,7 @@ export async function fetchOrderDetailForUser(user, historyEntry) {
     return normalizeHistoryEntry(response.order, 'standard');
   }
 
-  return historyEntry;
+  return normalizeHistoryEntry(historyEntry, historyEntry.source || 'parent');
 }
 
 export function buildProfileStatsFromOrders(orders = [], user = null) {
