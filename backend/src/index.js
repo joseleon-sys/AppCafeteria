@@ -391,6 +391,7 @@ async function ensureLocalProductSchema() {
 async function ensureLocalUserSchema() {
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS alias VARCHAR(30)`);
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS favoritos TEXT[] DEFAULT '{}'::TEXT[]`);
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS special_code VARCHAR(50)`);
   await pool.query(`
     ALTER TABLE users
     ALTER COLUMN favoritos TYPE TEXT[]
@@ -402,6 +403,61 @@ async function ensureLocalUserSchema() {
     )
   `);
   await pool.query(`ALTER TABLE users ALTER COLUMN favoritos SET DEFAULT '{}'::TEXT[]`);
+}
+
+function normalizeSpecialCode(value) {
+  if (value === undefined || value === null) return null;
+  const normalized = String(value).trim();
+  return normalized ? normalized.toLowerCase() : null;
+}
+
+function isValidSpecialCode(code) {
+  if (code === null) return true;
+  return code === 'ayuda';
+}
+
+async function getUserSpecialMode(userId) {
+  if (!userId) {
+    return { enabled: false, code: null };
+  }
+
+  try {
+    if (supabase) {
+      const { data, error } = await supabase
+        .from('users')
+        .select('is_adult, special_code')
+        .eq('id', userId)
+        .single();
+
+      if (error) {
+        if (error.message?.toLowerCase().includes('special_code')) {
+          return { enabled: false, code: null };
+        }
+        throw error;
+      }
+
+      const code = normalizeSpecialCode(data?.special_code);
+      return {
+        enabled: Boolean(data?.is_adult && code === 'ayuda'),
+        code,
+      };
+    }
+
+    const result = await pool.query(
+      'SELECT is_adult, special_code FROM users WHERE id = $1 LIMIT 1',
+      [userId]
+    );
+
+    const row = result.rows[0];
+    const code = normalizeSpecialCode(row?.special_code);
+    return {
+      enabled: Boolean(row?.is_adult && code === 'ayuda'),
+      code,
+    };
+  } catch (error) {
+    console.error('Error al comprobar el modo especial del usuario:', error);
+    return { enabled: false, code: null };
+  }
 }
 
 function isLocalDatabaseUnavailable(error) {
@@ -515,12 +571,16 @@ function buildLineItemNotes(item = {}) {
   return noteParts.filter(Boolean).join(' | ');
 }
 
-async function validateOrderItems(items = []) {
+async function validateOrderItems(items = [], options = {}) {
   const buildValidationError = (message) => {
     const error = new Error(message);
     error.statusCode = 400;
     return error;
   };
+
+  const userSpecialMode = options.userId
+    ? await getUserSpecialMode(options.userId)
+    : { enabled: false, code: null };
 
   let subtotal = 0;
   const validatedItems = [];
@@ -546,7 +606,18 @@ async function validateOrderItems(items = []) {
       throw buildValidationError(`Producto ${product.name} no esta disponible`);
     }
 
-    const unitPrice = Number.parseFloat(product.price) || 0;
+    const productAllergens = Array.isArray(product.allergens) ? product.allergens : [];
+    const hasHelpAllergen = productAllergens.some(
+      (allergen) => String(allergen || '').trim().toLowerCase() === 'ayuda'
+    );
+
+    if (userSpecialMode.enabled && !hasHelpAllergen) {
+      throw buildValidationError(`Producto ${product.name} no disponible con el codigo especial`);
+    }
+
+    const unitPrice = userSpecialMode.enabled
+      ? 0
+      : (Number.parseFloat(product.price) || 0);
     const itemSubtotal = unitPrice * quantity;
     subtotal += itemSubtotal;
 
@@ -557,7 +628,7 @@ async function validateOrderItems(items = []) {
       price: unitPrice,
       subtotal: itemSubtotal,
       notes: buildLineItemNotes(rawItem),
-      allergens: Array.isArray(product.allergens) ? product.allergens : []
+      allergens: productAllergens
     });
   }
 
@@ -1011,6 +1082,7 @@ app.post('/api/auth/register', registrationRateLimiter, async (req, res) => {
         role: userData.role,
         isAdult: userData.is_adult,
         parentToken: userData.parent_token,
+        specialCode: normalizeSpecialCode(userData.special_code),
         created_at: userData.created_at || null
       }
     });
@@ -1063,6 +1135,7 @@ app.post('/api/auth/login', loginRateLimiter, async (req, res) => {
           role: 'customer',
           isAdult: true,
           parentToken: null,
+          specialCode: null,
           created_at: null
         }
       });
@@ -1095,6 +1168,7 @@ app.post('/api/auth/login', loginRateLimiter, async (req, res) => {
           role: 'admin',
           isAdult: true,
           parentToken: null,
+          specialCode: null,
           created_at: null
         }
       });
@@ -1197,6 +1271,7 @@ app.post('/api/auth/login', loginRateLimiter, async (req, res) => {
         role: user.role,
         isAdult: user.is_adult,
         parentToken: user.parent_token,
+        specialCode: normalizeSpecialCode(user.special_code),
         favorites: normalizeFavoriteIds(user.favoritos),
         trustScore,
         created_at: user.created_at || null
@@ -1219,7 +1294,7 @@ app.get('/api/auth/me', authenticateToken, async (req, res) => {
   try {
     if (!supabase) {
       const result = await pool.query(
-        'SELECT id, email, nombre AS name, alias, role, is_adult, parent_token, favoritos, verified_email, verified_phone, created_at FROM users WHERE id = $1 LIMIT 1',
+        'SELECT id, email, nombre AS name, alias, role, is_adult, parent_token, special_code, favoritos, verified_email, verified_phone, created_at FROM users WHERE id = $1 LIMIT 1',
         [req.user.id]
       );
 
@@ -1234,6 +1309,7 @@ app.get('/api/auth/me', authenticateToken, async (req, res) => {
             role: user.role,
             isAdult: user.is_adult,
             parentToken: user.parent_token,
+            specialCode: normalizeSpecialCode(user.special_code),
             favorites: normalizeFavoriteIds(user.favoritos),
             verified_email: user.verified_email,
             verified_phone: user.verified_phone,
@@ -1272,6 +1348,7 @@ app.get('/api/auth/me', authenticateToken, async (req, res) => {
         role: user.role,
         isAdult: user.is_adult,
         parentToken: user.parent_token,
+        specialCode: normalizeSpecialCode(user.special_code),
         favorites: normalizeFavoriteIds(user.favoritos),
         verified_email: user.verified_email,
         verified_phone: user.verified_phone,
@@ -1382,7 +1459,7 @@ app.post('/api/orders', authenticateToken, async (req, res) => {
   }
 
   try {
-    const validatedOrder = await validateOrderItems(items);
+    const validatedOrder = await validateOrderItems(items, { userId: req.user.id });
 
     if (supabase) {
       const { data: order, error: orderError } = await supabase
@@ -1788,36 +1865,112 @@ app.put('/api/auth/profile', authenticateToken, async (req, res) => {
   try {
     const userId = req.user.id;
     const alias = normalizeAlias(req.body?.alias);
+    const specialCode = normalizeSpecialCode(req.body?.specialCode);
 
     if (!isValidAlias(alias)) {
       return res.status(400).json({ error: 'Alias inválido. Usa 3-30 caracteres: letras, números, _ . -' });
     }
 
+    if (!isValidSpecialCode(specialCode)) {
+      return res.status(400).json({ error: 'Código especial inválido. El único valor permitido es "ayuda".' });
+    }
+
+    let currentUser = null;
+    let missingSpecialCodeColumn = false;
+
+    if (supabase) {
+      let { data, error } = await supabase
+        .from('users')
+        .select('id, is_adult, special_code')
+        .eq('id', userId)
+        .single();
+
+      if (error && error.message?.toLowerCase().includes('special_code')) {
+        missingSpecialCodeColumn = true;
+        const fallbackResponse = await supabase
+          .from('users')
+          .select('id, is_adult')
+          .eq('id', userId)
+          .single();
+
+        data = fallbackResponse.data;
+        error = fallbackResponse.error;
+      }
+
+      if (error) {
+        throw error;
+      }
+
+      currentUser = {
+        ...data,
+        special_code: missingSpecialCodeColumn ? null : data?.special_code
+      };
+    } else {
+      const result = await pool.query(
+        'SELECT id, is_adult, special_code FROM users WHERE id = $1 LIMIT 1',
+        [userId]
+      );
+
+      currentUser = result.rows[0] || null;
+    }
+
+    if (!currentUser) {
+      return res.status(404).json({ error: 'Usuario no encontrado' });
+    }
+
+    if (!currentUser.is_adult && specialCode !== null) {
+      return res.status(403).json({ error: 'El código especial solo está disponible para perfiles Adulto' });
+    }
+
+    const currentSpecialCode = normalizeSpecialCode(currentUser.special_code);
+    const nextSpecialCode = currentUser.is_adult && specialCode === 'ayuda' && currentSpecialCode === 'ayuda'
+      ? null
+      : (currentUser.is_adult ? specialCode : null);
+
     let updatedUser = null;
 
     if (supabase) {
+      if (missingSpecialCodeColumn && nextSpecialCode !== null) {
+        return res.status(400).json({ error: 'Falta la columna special_code en Supabase. Ejecuta el script SQL actualizado.' });
+      }
+
+      const updatePayload = missingSpecialCodeColumn
+        ? { alias }
+        : { alias, special_code: nextSpecialCode };
+
+      const selectFields = missingSpecialCodeColumn
+        ? 'id, email, nombre, alias, role, is_adult, parent_token'
+        : 'id, email, nombre, alias, role, is_adult, parent_token, special_code';
+
       const { data, error } = await supabase
         .from('users')
-        .update({ alias })
+        .update(updatePayload)
         .eq('id', userId)
-        .select('id, email, nombre, alias, role, is_adult, parent_token')
+        .select(selectFields)
         .single();
 
       if (error) {
         if (error.message?.toLowerCase().includes('alias')) {
           return res.status(400).json({ error: 'Falta la columna alias en Supabase. Ejecuta el script SQL actualizado.' });
         }
+        if (error.message?.toLowerCase().includes('special_code')) {
+          return res.status(400).json({ error: 'Falta la columna special_code en Supabase. Ejecuta el script SQL actualizado.' });
+        }
         throw error;
       }
 
-      updatedUser = data;
+      updatedUser = {
+        ...data,
+        special_code: missingSpecialCodeColumn ? null : data?.special_code
+      };
     } else {
       const result = await pool.query(
         `UPDATE users
-         SET alias = $1
-         WHERE id = $2
-         RETURNING id, email, nombre, alias, role, is_adult, parent_token`,
-        [alias, userId]
+         SET alias = $1,
+             special_code = $2
+         WHERE id = $3
+         RETURNING id, email, nombre, alias, role, is_adult, parent_token, special_code`,
+        [alias, nextSpecialCode, userId]
       );
 
       if (result.rows.length === 0) {
@@ -1836,7 +1989,8 @@ app.put('/api/auth/profile', authenticateToken, async (req, res) => {
         alias: updatedUser.alias || null,
         role: updatedUser.role,
         isAdult: updatedUser.is_adult,
-        parentToken: updatedUser.parent_token
+        parentToken: updatedUser.parent_token,
+        specialCode: normalizeSpecialCode(updatedUser.special_code)
       }
     });
   } catch (error) {
@@ -1989,8 +2143,8 @@ app.post('/api/child/link-parent', authenticateToken, linkingRateLimiter, async 
         "SELECT COUNT(*)::int AS total FROM parent_child_links WHERE child_id = $1 AND status = 'active'",
         [childId]
       );
-      if ((childLinks.rows[0]?.total || 0) >= 2) {
-        return res.status(400).json({ error: 'Este hijo ya tiene el máximo de padres permitidos (2)' });
+      if ((childLinks.rows[0]?.total || 0) >= 5) {
+        return res.status(400).json({ error: 'Este hijo ya tiene el máximo de adultos permitidos (5)' });
       }
 
       const parentLinks = await pool.query(

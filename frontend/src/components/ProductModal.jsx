@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import "./ProductModal.css";
 import TechnicalSheetModal from "./TechnicalSheetModal";
 
@@ -11,17 +11,35 @@ export default function ProductModal({ product, isOpen, onClose, onAddToCart }) 
     addables: []
   });
 
+  useEffect(() => {
+    if (!isOpen || !product) return;
+    setQuantity(1);
+    setCustomizations({
+      sugar: 0,
+      removables: [],
+      addables: []
+    });
+  }, [isOpen, product]);
+
   if (!isOpen || !product) return null;
 
   const options = product.options || {};
-  const isCafe = product.category === 'cafes';
-  const isSandwich = product.category === 'sandwich';
   const hasSugar = options.sugar?.available;
   const hasRemovables = options.removables && options.removables.length > 0;
-  const hasAddables = options.addables && options.addables.length > 0;
-  const ingredients = Array.isArray(product.ingredients) ? product.ingredients : [];
-  const nutrition = product.nutritionTable && typeof product.nutritionTable === 'object' ? product.nutritionTable : {};
-  const shelfLifeHours = Number.isFinite(product.shelfLifeHours) ? product.shelfLifeHours : 24;
+  const features = Array.isArray(product.features) ? product.features : [];
+  const allergens = Array.isArray(product.allergens) ? product.allergens : [];
+
+  let badgeClassName = "product-badge";
+  if (product.badge) {
+    const badge = product.badge.toLowerCase();
+    if (badge.includes("hot")) badgeClassName += " badge-hot-sale";
+    else if (badge.includes("nuevo")) badgeClassName += " badge-nuevo";
+    else if (badge.includes("popular")) badgeClassName += " badge-popular";
+    else if (badge.includes("zero")) badgeClassName += " badge-zero";
+    else if (badge.includes("premium")) badgeClassName += " badge-premium";
+    else if (badge.includes("casero")) badgeClassName += " badge-casero";
+    else if (badge.includes("combo")) badgeClassName += " badge-combo";
+  }
 
   const calculateTotalPrice = () => {
     let basePrice = product.price;
@@ -71,11 +89,44 @@ export default function ProductModal({ product, isOpen, onClose, onAddToCart }) 
 
         <div className="modal-content">
           <div className="product-hero">
-            <img src={product.image} alt={product.name} className="product-image-large" />
-            <div className="product-info-large">
-              <h2>{product.name}</h2>
-              <p className="product-description">{product.description}</p>
-              <div className="base-price">{product.price.toFixed(2)} €</div>
+            <div className="product-hero-card">
+              <div className="product-image-stage">
+                <img src={product.image} alt={product.name} className="product-image-large" />
+                {product.badge && (
+                  <span className={badgeClassName}>{product.badge}</span>
+                )}
+              </div>
+
+              <div className="product-info-large">
+                <div className="product-title-row">
+                  <h2>{product.name}</h2>
+                  <div className="base-price">{product.price.toFixed(2)} €</div>
+                </div>
+
+                <p className="product-description">{product.description}</p>
+
+                {(features.length > 0 || allergens.length > 0) && (
+                  <div className="product-meta-row">
+                    {features.length > 0 && (
+                      <div className="product-features modal-product-features">
+                        {features.slice(0, 3).map((feature) => (
+                          <span key={feature} className="feature-tag modal-feature-tag">{feature}</span>
+                        ))}
+                      </div>
+                    )}
+
+                    {allergens.length > 0 && (
+                      <div className="modal-allergens" aria-label="Alergenos">
+                        {allergens.map((allergen) => (
+                          <span key={allergen} className="modal-allergen-chip">
+                            {allergen}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 

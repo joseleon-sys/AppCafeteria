@@ -58,6 +58,7 @@ export default function AppMobile() {
           userId: current.id,
           parentToken: current.parentToken || null,
           isAdult: current.isAdult,
+          specialCode: current.specialCode || null,
           created_at: current.created_at || null
         };
 
@@ -134,6 +135,7 @@ export default function AppMobile() {
       ) : (
         <>
           <MainScreen
+            user={user}
             onLogout={handleLogout}
             onShowSpinner={() => setShowSpinner(true)}
             onShowCart={() => setShowCart(true)}

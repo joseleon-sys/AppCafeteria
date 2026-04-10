@@ -17,11 +17,13 @@ CREATE TABLE IF NOT EXISTS users (
   created_at TIMESTAMP DEFAULT NOW(),
   last_login TIMESTAMP,
   active BOOLEAN DEFAULT true,
-  favoritos TEXT[] DEFAULT '{}'
+  favoritos TEXT[] DEFAULT '{}',
+  special_code VARCHAR(50)
 );
 
 ALTER TABLE users ADD COLUMN IF NOT EXISTS alias VARCHAR(30);
 ALTER TABLE users ADD COLUMN IF NOT EXISTS favoritos TEXT[] DEFAULT '{}';
+ALTER TABLE users ADD COLUMN IF NOT EXISTS special_code VARCHAR(50);
 
 CREATE TABLE IF NOT EXISTS menu_items (
   id SERIAL PRIMARY KEY,
@@ -78,6 +80,31 @@ CREATE TABLE IF NOT EXISTS parent_child_links (
 
 CREATE INDEX idx_parent_child_parent ON parent_child_links(parent_id);
 CREATE INDEX idx_parent_child_child ON parent_child_links(child_id);
+
+CREATE OR REPLACE FUNCTION enforce_child_adult_limit()
+RETURNS TRIGGER AS $$
+BEGIN
+  IF NEW.status IN ('pending', 'active') AND (
+    SELECT COUNT(*)
+    FROM parent_child_links
+    WHERE child_id = NEW.child_id
+      AND status = 'active'
+      AND id <> COALESCE(NEW.id, -1)
+  ) >= 5 THEN
+    RAISE EXCEPTION 'Un menor no puede tener más de 5 adultos relacionados';
+  END IF;
+
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_enforce_child_adult_limit ON parent_child_links;
+
+CREATE TRIGGER trg_enforce_child_adult_limit
+BEFORE INSERT OR UPDATE OF child_id, status
+ON parent_child_links
+FOR EACH ROW
+EXECUTE FUNCTION enforce_child_adult_limit();
 
 -- Tabla de pedidos de hijos
 CREATE TABLE IF NOT EXISTS child_orders (

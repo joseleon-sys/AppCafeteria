@@ -66,6 +66,7 @@ export default function FancyLogin({ onLogin }) {
         userId: data.user.id,
         parentToken: data.user.parentToken,
         isAdult: data.user.isAdult,
+        specialCode: data.user.specialCode || null,
         created_at: data.user.created_at || null
       });
     } catch (err) {
@@ -143,6 +144,7 @@ export default function FancyLogin({ onLogin }) {
         userId: data.user.id,
         parentToken: data.user.parentToken,
         isAdult: data.user.isAdult,
+        specialCode: data.user.specialCode || null,
         created_at: data.user.created_at || null
       });
     } catch (err) {

@@ -1,15 +1,27 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import SideMenu from "./SideMenu";
 import Categories from "./Categories";
 import ProductsGrid from "./ProductsGrid";
 import BottomNav from "./BottomNav";
 
-export default function MainScreen({ onLogout, onShowSpinner, onShowCart, onShowHistory, onShowProfile, onShowLinkParent }) {
+const ALLERGEN_FILTERS = [
+  { value: 'gluten', label: 'Gluten' },
+  { value: 'lactosa', label: 'Lactosa' },
+  { value: 'huevo', label: 'Huevo' },
+  { value: 'frutos secos', label: 'Frutos secos' },
+  { value: 'pescado', label: 'Pescado' }
+];
+
+export default function MainScreen({ user, onLogout, onShowSpinner, onShowCart, onShowHistory, onShowProfile, onShowLinkParent }) {
   const [selectedCategory, setSelectedCategory] = useState('cafes');
   const [selectedSubcategory, setSelectedSubcategory] = useState('all');
+  const [selectedAllergens, setSelectedAllergens] = useState([]);
+  const [allergenFilterOpen, setAllergenFilterOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [activeSection, setActiveSection] = useState('catalog');
   const transitionDurationMs = 600;
+  const specialModeActive = Boolean(user?.isAdult && String(user?.specialCode || '').trim().toLowerCase() === 'ayuda');
+  const allergenFilterRef = useRef(null);
 
   useEffect(() => {
     const hamburger = document.getElementById('hamburger');
@@ -37,6 +49,24 @@ export default function MainScreen({ onLogout, onShowSpinner, onShowCart, onShow
     };
   }, []);
 
+  useEffect(() => {
+    if (!allergenFilterOpen) {
+      return undefined;
+    }
+
+    const handleClickOutside = (event) => {
+      if (allergenFilterRef.current && !allergenFilterRef.current.contains(event.target)) {
+        setAllergenFilterOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [allergenFilterOpen]);
+
   const handleCategoryChange = (category) => {
     setSelectedCategory(category);
     setSelectedSubcategory('all');
@@ -54,6 +84,20 @@ export default function MainScreen({ onLogout, onShowSpinner, onShowCart, onShow
 
     setActiveSection('catalog');
   };
+
+  const handleToggleAllergen = (allergenValue) => {
+    setSelectedAllergens((prev) => (
+      prev.includes(allergenValue)
+        ? prev.filter((value) => value !== allergenValue)
+        : [...prev, allergenValue]
+    ));
+  };
+
+  const filterLabel = selectedAllergens.length === 0
+    ? 'Alergenos'
+    : selectedAllergens.length === 1
+      ? `Sin ${selectedAllergens[0]}`
+      : `Sin ${selectedAllergens.length} alergenos`;
   
   return (
     <main id="main-screen" className="screen" role="main">
@@ -78,28 +122,65 @@ export default function MainScreen({ onLogout, onShowSpinner, onShowCart, onShow
             CafeteriaApp
           </span>
         </div>
-        <button className="icon-btn" aria-label="Buscar">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <circle cx="11" cy="11" r="8"></circle>
-            <path d="m21 21-4.35-4.35"></path>
-          </svg>
-        </button>
+        <div className="header-filter" ref={allergenFilterRef}>
+          <button
+            className={`header-filter-btn ${selectedAllergens.length > 0 ? 'is-active' : ''}`}
+            aria-label="Filtrar por alérgenos"
+            aria-haspopup="true"
+            aria-expanded={allergenFilterOpen}
+            onClick={() => setAllergenFilterOpen((prev) => !prev)}
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>
+            </svg>
+            <span>{filterLabel}</span>
+          </button>
+
+          {allergenFilterOpen && (
+            <div className="header-filter-menu" role="menu" aria-label="Opciones de alérgenos">
+              <button
+                type="button"
+                className="header-filter-clear"
+                onClick={() => setSelectedAllergens([])}
+              >
+                Mostrar todos
+              </button>
+              {ALLERGEN_FILTERS.map((allergen) => (
+                <button
+                  key={allergen.value}
+                  type="button"
+                  className={`header-filter-option ${selectedAllergens.includes(allergen.value) ? 'is-selected' : ''}`}
+                  onClick={() => handleToggleAllergen(allergen.value)}
+                >
+                  <span>{allergen.label}</span>
+                  {selectedAllergens.includes(allergen.value) && (
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <path d="M20 6 9 17l-5-5"></path>
+                    </svg>
+                  )}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
       </header>
 
       {/* Overlay para cerrar el menú */}
       <div id="overlay" className="overlay hidden"></div>
 
       <SideMenu onLogout={onLogout} onShowProfile={onShowProfile} onShowLinkParent={onShowLinkParent} />
-      {activeSection === 'catalog' && (
+      {activeSection === 'catalog' && !specialModeActive && (
         <Categories 
           onCategoryChange={handleCategoryChange}
           onSubcategoryChange={handleSubcategoryChange}
         />
       )}
       <ProductsGrid 
+        user={user}
         mode={activeSection}
         selectedCategory={selectedCategory}
         selectedSubcategory={selectedSubcategory}
+        selectedAllergens={selectedAllergens}
         onBackToCatalog={() => {
           onShowSpinner && onShowSpinner();
           setTimeout(() => {

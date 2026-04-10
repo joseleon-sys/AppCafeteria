@@ -1,24 +1,25 @@
 import React, { useState } from "react";
 import "./ProfileModal.css";
-import { getMyChildrenLinks, getMyParentLinks, updateProfileAlias } from "../lib/api";
+import { getMyChildrenLinks, getMyParentLinks, updateProfile } from "../lib/api";
 import { showError, showSuccess } from "./Toast";
 import LinkRequestsList from "./LinkRequestsList";
-import { buildAchievementsFromOrders, buildProfileStatsFromOrders, fetchOrderHistoryForUser } from "../lib/orderService";
+import { buildProfileStatsFromOrders, fetchOrderHistoryForUser } from "../lib/orderService";
 
 export default function ProfileModal({ isOpen, onClose, user, onLogout, onUserUpdate }) {
   const [activeTab, setActiveTab] = useState('info');
   const [aliasInput, setAliasInput] = useState('');
+  const [specialCodeInput, setSpecialCodeInput] = useState('');
   const [aliasSaving, setAliasSaving] = useState(false);
   const [aliasMessage, setAliasMessage] = useState('');
   const [profileStats, setProfileStats] = useState(() => buildProfileStatsFromOrders([], user));
-  const [achievements, setAchievements] = useState(() => buildAchievementsFromOrders([]));
   const [familyLinks, setFamilyLinks] = useState([]);
   const [familyLoading, setFamilyLoading] = useState(false);
 
   React.useEffect(() => {
     setAliasInput(user?.alias || '');
+    setSpecialCodeInput(user?.specialCode || '');
     setAliasMessage('');
-  }, [user?.alias, isOpen]);
+  }, [user?.alias, user?.specialCode, isOpen]);
 
   React.useEffect(() => {
     if (!isOpen || !user) return;
@@ -30,13 +31,11 @@ export default function ProfileModal({ isOpen, onClose, user, onLogout, onUserUp
         const orders = await fetchOrderHistoryForUser(user);
         if (!cancelled) {
           setProfileStats(buildProfileStatsFromOrders(orders, user));
-          setAchievements(buildAchievementsFromOrders(orders));
         }
       } catch (error) {
         console.error('Error cargando estadisticas de perfil:', error);
         if (!cancelled) {
           setProfileStats(buildProfileStatsFromOrders([], user));
-          setAchievements(buildAchievementsFromOrders([]));
         }
         showError(error.message || 'No se pudieron cargar las estadisticas del perfil');
       }
@@ -105,7 +104,6 @@ export default function ProfileModal({ isOpen, onClose, user, onLogout, onUserUp
     { id: 'info', label: 'Información', icon: 'ℹ︎', description: 'Tus datos personales' },
     { id: 'alias', label: 'Alias', icon: '👤', description: 'Tu alias personalizado' },
     { id: 'stats', label: 'Estadísticas', icon: '📊', description: 'Tu actividad' },
-    { id: 'achievements', label: 'Logros', icon: '🏆', description: 'Tus logros' },
     { id: 'family', label: 'Familia', icon: '👨‍👩‍👧', description: 'Vinculación' }
   ];
 
@@ -121,13 +119,35 @@ export default function ProfileModal({ isOpen, onClose, user, onLogout, onUserUp
     setAliasMessage('');
 
     try {
-      const result = await updateProfileAlias(normalizedAlias || null);
+      const result = await updateProfile(normalizedAlias || null, user?.specialCode || null);
       const savedAlias = result?.user?.alias || null;
       onUserUpdate && onUserUpdate({ alias: savedAlias });
       setAliasInput(savedAlias || '');
       setAliasMessage(savedAlias ? 'Alias guardado correctamente' : 'Alias eliminado correctamente');
     } catch (error) {
       setAliasMessage(error.message || 'No se pudo guardar el alias');
+    } finally {
+      setAliasSaving(false);
+    }
+  }
+
+  async function handleSaveSpecialCode() {
+    if (!user?.isAdult) {
+      setAliasMessage('El código especial solo está disponible para perfiles Adulto');
+      return;
+    }
+
+    setAliasSaving(true);
+    setAliasMessage('');
+
+    try {
+      const result = await updateProfile(user?.alias || null, specialCodeInput.trim() || null);
+      const savedSpecialCode = result?.user?.specialCode || null;
+      onUserUpdate && onUserUpdate({ specialCode: savedSpecialCode });
+      setSpecialCodeInput(savedSpecialCode || '');
+      setAliasMessage(savedSpecialCode ? 'Código especial guardado correctamente' : 'Código especial desactivado correctamente');
+    } catch (error) {
+      setAliasMessage(error.message || 'No se pudo guardar el código especial');
     } finally {
       setAliasSaving(false);
     }
@@ -199,6 +219,36 @@ export default function ProfileModal({ isOpen, onClose, user, onLogout, onUserUp
                     </label>
                   </span>
                 </div>
+                {user?.isAdult && (
+                  <div className="alias-card" style={{ marginTop: 20 }}>
+                    <label className="alias-label" htmlFor="profile-special-code-input">Código especial</label>
+                    <div className="alias-input-row">
+                      <input
+                        id="profile-special-code-input"
+                        className="alias-input"
+                        type="text"
+                        placeholder="ayuda"
+                        value={specialCodeInput}
+                        onChange={(e) => setSpecialCodeInput(e.target.value)}
+                        maxLength={50}
+                      />
+                      <button
+                        className="alias-save-btn"
+                        type="button"
+                        onClick={handleSaveSpecialCode}
+                        disabled={aliasSaving}
+                      >
+                        {aliasSaving ? '⟳' : '✓'}
+                      </button>
+                    </div>
+                    <p className="alias-help">
+                      {user?.specialCode
+                        ? 'Si vuelves a guardar ayuda, se desactiva el modo especial.'
+                        : 'Déjalo vacío o escribe ayuda.'}
+                    </p>
+                    {aliasMessage && <p className="alias-message">{aliasMessage}</p>}
+                  </div>
+                )}
               </div>
             )}
 
@@ -256,26 +306,6 @@ export default function ProfileModal({ isOpen, onClose, user, onLogout, onUserUp
                     <div className="stat-label">Total gastado</div>
                   </div>
                 </div>
-              </div>
-            )}
-
-            {activeTab === 'achievements' && (
-              <div className="achievements-tab">
-                {achievements.map(achievement => (
-                  <div
-                    key={achievement.id}
-                    className={`achievement-item ${achievement.unlocked ? 'unlocked' : 'locked'}`}
-                  >
-                    <div className="achievement-icon">{achievement.icon}</div>
-                    <div className="achievement-info">
-                      <div className="achievement-name">{achievement.name}</div>
-                      <div className="achievement-status">
-                        {achievement.unlocked ? 'Desbloqueado' : 'Bloqueado'}
-                      </div>
-                    </div>
-                    {achievement.unlocked && <div className="achievement-check">✓</div>}
-                  </div>
-                ))}
               </div>
             )}
 

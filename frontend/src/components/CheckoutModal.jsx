@@ -5,23 +5,11 @@ import { submitOrderForUser } from "../lib/orderService";
 import "./CheckoutModal.css";
 
 export default function CheckoutModal({ isOpen, onClose, user }) {
-  const [promoCode, setPromoCode] = useState("");
-  const [isPromoModalOpen, setIsPromoModalOpen] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const { cartItems, total, clearCart, updateQuantity, removeItem } = useCart();
 
   const subtotal = cartItems.reduce((sum, item) => sum + (item.totalPrice || item.price * item.quantity), 0);
-  const discount = promoCode.toLowerCase() === "descuento10" ? subtotal * 0.1 : 0;
-  const finalTotal = subtotal - discount;
-
-  const handlePromoApply = (e) => {
-    e.preventDefault();
-    if (promoCode.toLowerCase() === "descuento10") {
-      showSuccess('¡Código aplicado! 10% de descuento');
-    } else {
-      showError('Código promocional no válido');
-    }
-  };
+  const finalTotal = total;
 
   const handleQuantityChange = (itemId, newQuantity) => {
     if (newQuantity <= 0) {
@@ -79,13 +67,6 @@ export default function CheckoutModal({ isOpen, onClose, user }) {
           <section className="checkout-section">
             <div className="section-header">
               <h3>📦 Tus productos ({cartItems.length})</h3>
-              <button 
-                className="promo-button"
-                onClick={() => setIsPromoModalOpen(true)}
-                title="Agregar código promocional"
-              >
-                🎟️
-              </button>
             </div>
             <div className="products-list">
               {cartItems.map(item => (
@@ -138,12 +119,6 @@ export default function CheckoutModal({ isOpen, onClose, user }) {
               <span>Subtotal:</span>
               <span className="price">{subtotal.toFixed(2)}€</span>
             </div>
-            {discount > 0 && (
-              <div className="summary-row discount">
-                <span>Descuento:</span>
-                <span className="price">-{discount.toFixed(2)}€</span>
-              </div>
-            )}
             <div className="summary-row total">
               <span>Total:</span>
               <span className="price-large">{finalTotal.toFixed(2)}€</span>
@@ -160,39 +135,6 @@ export default function CheckoutModal({ isOpen, onClose, user }) {
             {isProcessing ? "Procesando..." : "Confirmar y Pagar"}
           </button>
         </div>
-
-        {/* Modal de Código Promocional */}
-        {isPromoModalOpen && (
-          <div className="promo-modal-overlay" onClick={() => setIsPromoModalOpen(false)}>
-            <div className="promo-modal" onClick={e => e.stopPropagation()}>
-              <div className="promo-modal-header">
-                <h3>🎟️ Código Promocional</h3>
-                <button 
-                  className="promo-modal-close" 
-                  onClick={() => setIsPromoModalOpen(false)}
-                  aria-label="Cerrar"
-                >
-                  ✕
-                </button>
-              </div>
-              <form className="promo-modal-form" onSubmit={handlePromoApply}>
-                <input 
-                  type="text" 
-                  placeholder="Ingresa tu código" 
-                  className="promo-modal-input"
-                  value={promoCode}
-                  onChange={(e) => setPromoCode(e.target.value)}
-                  maxLength={20}
-                  autoFocus
-                />
-                {discount > 0 && (
-                  <div className="discount-badge-modal">✓ Descuento aplicado: -{discount.toFixed(2)}€</div>
-                )}
-                <button type="submit" className="promo-modal-btn">Aplicar Código</button>
-              </form>
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );

@@ -95,8 +95,8 @@ export async function calculateTrustScore(supabase, userId) {
         .select('id')
         .eq('child_id', userId);
       
-      // Si tiene más de 2 padres: muy sospechoso
-      if (links && links.length > 2) score -= 30;
+      // Si tiene más de 5 adultos vinculados: muy sospechoso
+      if (links && links.length > 5) score -= 30;
     }
     
     // Limitar entre 0 y 100
@@ -146,17 +146,17 @@ export async function validateLinkingLimits(supabase, { childId, parentId }) {
   }
   
   try {
-    // Verificar que el hijo no tenga más de 2 padres
+    // Verificar que el hijo no tenga más de 5 adultos vinculados
     const { data: childLinks } = await supabase
       .from('parent_child_links')
       .select('id')
       .eq('child_id', childId)
       .eq('status', 'active');
     
-    if (childLinks && childLinks.length >= 2) {
+    if (childLinks && childLinks.length >= 5) {
       return { 
         valid: false, 
-        reason: 'Este hijo ya tiene el máximo de padres permitidos (2)',
+        reason: 'Este hijo ya tiene el máximo de adultos permitidos (5)',
         severity: 'high'
       };
     }

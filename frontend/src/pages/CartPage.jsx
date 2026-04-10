@@ -12,7 +12,7 @@ import {
 import { arrowBack, checkmark, close } from 'ionicons/icons';
 import { useHistory } from 'react-router-dom';
 import CartPanel from '../components/CartPanel';
-import useCart from '../lib/useCart';
+import { useCart } from '../lib/CartContext';
 import './CartPage.css';
 
 const CartPage = () => {

@@ -9,6 +9,10 @@ function normalizeFavoriteId(value) {
   return String(value ?? '').trim();
 }
 
+function isSpecialModeEnabled(user) {
+  return Boolean(user?.isAdult && String(user?.specialCode || '').trim().toLowerCase() === 'ayuda');
+}
+
 function inferTechnicalData(name, category) {
   const nombre = (name || '').toLowerCase();
   const cat = category === 'sandwich' ? 'bocadillos' : category;
@@ -49,13 +53,14 @@ function inferTechnicalData(name, category) {
   return { ingredients, caloriesKcal, nutritionTable };
 }
 
-export default function ProductsGrid({ mode = 'catalog', selectedCategory = 'cafes', selectedSubcategory = null, onBackToCatalog }) {
+export default function ProductsGrid({ user, mode = 'catalog', selectedCategory = 'cafes', selectedSubcategory = null, selectedAllergens = [], onBackToCatalog }) {
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [products, setProducts] = useState([]);
   const [error, setError] = useState(null);
   const [favoriteIds, setFavoriteIds] = useState([]);
   const { addItem } = useCart();
+  const specialModeActive = isSpecialModeEnabled(user);
 
   useEffect(() => {
     let isMounted = true;
@@ -128,16 +133,19 @@ export default function ProductsGrid({ mode = 'catalog', selectedCategory = 'caf
             : (typeof p.nutrition_table === 'object' && p.nutrition_table ? p.nutrition_table : {});
 
           const inferred = inferTechnicalData(p.name, normalizedCategory);
+          const allergens = typeof p.allergens === 'string' ? JSON.parse(p.allergens) : (Array.isArray(p.allergens) ? p.allergens : []);
+          const hasHelpAllergen = allergens.some((allergen) => String(allergen || '').trim().toLowerCase() === 'ayuda');
 
           return {
             id: p.id,
             name: p.name,
-            price: parseFloat(p.price),
+            price: specialModeActive && hasHelpAllergen ? 0 : parseFloat(p.price),
+            originalPrice: parseFloat(p.price),
             category: normalizedCategory,
             description: p.description || '',
             image: p.image_url || 'https://images.unsplash.com/photo-1495474472287-4d71bcdd2085?w=400&q=80',
             badge: typeof p.badges === 'string' ? (JSON.parse(p.badges)[0] || null) : (Array.isArray(p.badges) && p.badges.length > 0 ? p.badges[0] : null),
-            allergens: typeof p.allergens === 'string' ? JSON.parse(p.allergens) : (Array.isArray(p.allergens) ? p.allergens : []),
+            allergens,
             features: [],
             options: typeof p.options === 'string' ? JSON.parse(p.options) : (typeof p.options === 'object' ? p.options : {}),
             ingredients: ingredients.length ? ingredients : inferred.ingredients,
@@ -148,7 +156,8 @@ export default function ProductsGrid({ mode = 'catalog', selectedCategory = 'caf
             nutritionTable: Object.keys(nutritionTable).length ? nutritionTable : inferred.nutritionTable,
             sanitaryApproved: p.sanitary_approved !== false,
             sanitaryNotes: p.sanitary_notes || 'Ficha técnica revisada para cafetería escolar.',
-            approvedAt: p.approved_at || null
+            approvedAt: p.approved_at || null,
+            hasHelpAllergen
           };
         });
         
@@ -162,12 +171,34 @@ export default function ProductsGrid({ mode = 'catalog', selectedCategory = 'caf
     };
 
     fetchProducts();
-  }, []); // Cargar una sola vez al montar el componente
+  }, [specialModeActive]); // Recargar si cambia el modo especial
 
   // Filtrar productos basado en la categoría y subcategoría seleccionadas
   const filteredProducts = products.filter(product => {
+    if (specialModeActive && !product.hasHelpAllergen) {
+      return false;
+    }
+
     if (mode === 'favorites') {
       return favoriteIds.includes(normalizeFavoriteId(product.id));
+    }
+
+    if (specialModeActive) {
+      return true;
+    }
+
+    if (selectedAllergens.length > 0) {
+      const normalizedAllergens = Array.isArray(product.allergens)
+        ? product.allergens.map((allergen) => String(allergen || '').trim().toLowerCase())
+        : [];
+
+      const hasExcludedAllergen = selectedAllergens.some((selectedAllergen) =>
+        normalizedAllergens.includes(String(selectedAllergen).trim().toLowerCase())
+      );
+
+      if (hasExcludedAllergen) {
+        return false;
+      }
     }
 
     // Filtro de categoría
@@ -234,10 +265,30 @@ export default function ProductsGrid({ mode = 'catalog', selectedCategory = 'caf
     }
   };
 
-  const favoriteProductsCount = products.filter((product) => favoriteIds.includes(normalizeFavoriteId(product.id))).length;
+  const favoriteProductsCount = products.filter((product) => {
+    if (!favoriteIds.includes(normalizeFavoriteId(product.id))) {
+      return false;
+    }
+
+    if (specialModeActive && !product.hasHelpAllergen) {
+      return false;
+    }
+
+    return true;
+  }).length;
 
   return (
     <section className="content">
+      {specialModeActive && (
+        <div className="favorites-hero" style={{ marginBottom: 16 }}>
+          <div className="favorites-hero-copy">
+            <span className="favorites-eyebrow">Modo especial</span>
+            <h3>Catálogo adaptado</h3>
+            <p>Solo se muestran productos con el alérgeno ayuda y todos aparecen a 0 €.</p>
+          </div>
+        </div>
+      )}
+
       {mode === 'favorites' && (
         <div className="favorites-hero">
           <div className="favorites-hero-copy">

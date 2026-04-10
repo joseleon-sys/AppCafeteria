@@ -116,11 +116,15 @@ export async function healthCheck() {
   return apiRequest('/api/health');
 }
 
-export async function updateProfileAlias(alias) {
+export async function updateProfile(alias, specialCode = undefined) {
   return apiRequest('/api/auth/profile', {
     method: 'PUT',
-    body: JSON.stringify({ alias }),
+    body: JSON.stringify({ alias, ...(specialCode !== undefined ? { specialCode } : {}) }),
   }, { auth: true, contentType: true });
+}
+
+export async function updateProfileAlias(alias) {
+  return updateProfile(alias);
 }
 
 export async function getCurrentUser() {
@@ -291,6 +295,7 @@ export default {
   getOrder,
   getMyOrders,
   healthCheck,
+  updateProfile,
   updateProfileAlias,
   getCurrentUser,
   getMyFavorites,

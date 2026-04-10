@@ -17,7 +17,7 @@ const CartPanel = ({
 }) => {
   const [couponCode, setCouponCode] = useState('');
   
-  const total = subtotal - discount + deliveryFee;
+  const total = Math.max(0, subtotal - discount + deliveryFee);
 
   const handleQuantityChange = (itemId, newQuantity) => {
     if (newQuantity <= 0) {
@@ -167,10 +167,12 @@ const CartPanel = ({
               </div>
             )}
             
-            <div className="summary-row">
-              <span className="summary-label">Gastos de envío:</span>
-              <span className="summary-value">{formatPrice(deliveryFee)}</span>
-            </div>
+            {deliveryFee > 0 && (
+              <div className="summary-row">
+                <span className="summary-label">Gastos de envío:</span>
+                <span className="summary-value">{formatPrice(deliveryFee)}</span>
+              </div>
+            )}
             
             <div className="summary-divider"></div>
             

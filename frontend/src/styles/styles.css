@@ -223,6 +223,99 @@ body.no-scroll {
   letter-spacing: -0.3px;
 }
 
+.header-filter {
+  position: relative;
+}
+
+.header-filter-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  padding: 0 12px;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  border-radius: var(--radius-full);
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--text-inverse);
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: capitalize;
+  backdrop-filter: blur(8px);
+  cursor: pointer;
+  transition: background var(--transition-fast), border-color var(--transition-fast), transform var(--transition-fast);
+}
+
+.header-filter-btn:hover {
+  background: rgba(255, 255, 255, 0.18);
+  border-color: rgba(255, 255, 255, 0.36);
+  transform: translateY(-1px);
+}
+
+.header-filter-btn.is-active {
+  background: rgba(255, 255, 255, 0.22);
+  border-color: rgba(255, 255, 255, 0.44);
+}
+
+.header-filter-menu {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  width: 200px;
+  padding: 8px;
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-lg);
+  border: 1px solid rgba(107, 66, 38, 0.12);
+}
+
+.header-filter-clear {
+  width: 100%;
+  margin-bottom: 6px;
+  padding: 10px 12px;
+  border: none;
+  border-radius: var(--radius-md);
+  background: rgba(107, 66, 38, 0.08);
+  color: var(--primary);
+  font-size: 13px;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+
+.header-filter-clear:hover {
+  background: rgba(107, 66, 38, 0.14);
+}
+
+.header-filter-option {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+  padding: 10px 12px;
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: inherit;
+  font-size: 14px;
+  text-align: left;
+  text-transform: capitalize;
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.header-filter-option:hover {
+  background: rgba(212, 145, 95, 0.1);
+}
+
+.header-filter-option.is-selected {
+  background: rgba(212, 145, 95, 0.16);
+  color: var(--primary);
+  font-weight: 600;
+}
+
 .coffee-icon {
   filter: drop-shadow(0 1px 0 rgba(0, 0, 0, 0.05));
 }

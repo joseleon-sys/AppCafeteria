@@ -173,8 +173,7 @@
 }
 
 .info-tab,
-.stats-tab,
-.achievements-tab {
+.stats-tab {
   padding: 24px;
 }
 
@@ -607,67 +606,6 @@ input:checked + .slider:before {
   color: #6c757d;
 }
 
-/* Achievements Tab */
-.achievement-item {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  padding: 16px;
-  border-radius: 16px;
-  margin-bottom: 12px;
-  transition: all 0.2s ease;
-}
-
-.achievement-item.unlocked {
-  background: #d4edda;
-  border: 2px solid #c3e6cb;
-}
-
-.achievement-item.locked {
-  background: #f8f9fa;
-  border: 2px solid #e9ecef;
-  opacity: 0.6;
-}
-
-.achievement-icon {
-  font-size: 24px;
-  width: 48px;
-  height: 48px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: white;
-  border-radius: 50%;
-}
-
-.achievement-info {
-  flex: 1;
-}
-
-.achievement-name {
-  font-weight: 600;
-  color: #1a1a2e;
-  margin-bottom: 4px;
-}
-
-.achievement-status {
-  font-size: 13px;
-  color: #6c757d;
-}
-
-.achievement-check {
-  width: 24px;
-  height: 24px;
-  background: #28a745;
-  color: white;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: 700;
-  font-size: 12px;
-}
-
 /* Responsive */
 @media (max-width: 576px) {
   .profile-modal-overlay {
@@ -712,7 +650,6 @@ input:checked + .slider:before {
 
   .info-tab,
   .stats-tab,
-  .achievements-tab,
   .alias-tab,
   .family-tab {
     padding: 20px;
@@ -724,11 +661,6 @@ input:checked + .slider:before {
     padding: 20px;
   }
   
-  .achievement-item {
-    flex-direction: column;
-    text-align: center;
-    padding: 20px;
-  }
 }
 /* ============================================
    FAMILY TAB STYLES

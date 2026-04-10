@@ -51,8 +51,8 @@ export const useCart = () => {
 
   // Calcular totales
   const subtotal = cartItems.reduce((total, item) => total + (item.price * item.quantity), 0);
-  const deliveryFee = cartItems.length > 0 ? 2.50 : 0;
-  const total = subtotal - discount + deliveryFee;
+  const deliveryFee = 0;
+  const total = Math.max(0, subtotal - discount);
   const itemCount = cartItems.reduce((total, item) => total + item.quantity, 0);
 
   // Añadir producto al carrito
