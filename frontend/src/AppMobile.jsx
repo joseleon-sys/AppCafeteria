@@ -107,6 +107,16 @@ export default function AppMobile() {
     return () => { document.body.style.overflowX = ''; };
   }, []);
 
+  useEffect(() => {
+    if (!showSpinner) return undefined;
+
+    const spinnerTimeout = setTimeout(() => {
+      setShowSpinner(false);
+    }, 600);
+
+    return () => clearTimeout(spinnerTimeout);
+  }, [showSpinner]);
+
   return (
     <>
       {/* Solo mostrar Overlay y Toast cuando hay usuario */}
@@ -135,7 +145,6 @@ export default function AppMobile() {
             <div className="loading-modal-overlay">
               <div className="loading-modal">
                 <HamsterSpinner message="Procesando..." size="large" />
-                <button className="loading-modal-close" onClick={() => setShowSpinner(false)}>Cerrar</button>
               </div>
             </div>
           )}

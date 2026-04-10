@@ -8,6 +8,8 @@ export default function MainScreen({ onLogout, onShowSpinner, onShowCart, onShow
   const [selectedCategory, setSelectedCategory] = useState('cafes');
   const [selectedSubcategory, setSelectedSubcategory] = useState('all');
   const [menuOpen, setMenuOpen] = useState(false);
+  const [activeSection, setActiveSection] = useState('catalog');
+  const transitionDurationMs = 600;
 
   useEffect(() => {
     const hamburger = document.getElementById('hamburger');
@@ -42,6 +44,15 @@ export default function MainScreen({ onLogout, onShowSpinner, onShowCart, onShow
 
   const handleSubcategoryChange = (subcategory) => {
     setSelectedSubcategory(subcategory);
+  };
+
+  const handleBottomNavChange = (tabId) => {
+    if (tabId === 'favorites') {
+      setActiveSection('favorites');
+      return;
+    }
+
+    setActiveSection('catalog');
   };
   
   return (
@@ -79,15 +90,26 @@ export default function MainScreen({ onLogout, onShowSpinner, onShowCart, onShow
       <div id="overlay" className="overlay hidden"></div>
 
       <SideMenu onLogout={onLogout} onShowProfile={onShowProfile} onShowLinkParent={onShowLinkParent} />
-      <Categories 
-        onCategoryChange={handleCategoryChange}
-        onSubcategoryChange={handleSubcategoryChange}
-      />
+      {activeSection === 'catalog' && (
+        <Categories 
+          onCategoryChange={handleCategoryChange}
+          onSubcategoryChange={handleSubcategoryChange}
+        />
+      )}
       <ProductsGrid 
+        mode={activeSection}
         selectedCategory={selectedCategory}
         selectedSubcategory={selectedSubcategory}
+        onBackToCatalog={() => {
+          onShowSpinner && onShowSpinner();
+          setTimeout(() => {
+            setActiveSection('catalog');
+          }, transitionDurationMs);
+        }}
       />
       <BottomNav 
+        activeTab={activeSection === 'favorites' ? 'favorites' : 'home'}
+        onTabChange={handleBottomNavChange}
         onShowSpinner={onShowSpinner} 
         onShowCart={onShowCart}
         onShowHistory={onShowHistory}
@@ -96,4 +118,3 @@ export default function MainScreen({ onLogout, onShowSpinner, onShowCart, onShow
     </main>
   );
 }
-

@@ -45,12 +45,30 @@ function inferTechnicalData(name, category) {
   return { ingredients, caloriesKcal, nutritionTable };
 }
 
-export default function ProductsGrid({ selectedCategory = 'cafes', selectedSubcategory = null }) {
+export default function ProductsGrid({ mode = 'catalog', selectedCategory = 'cafes', selectedSubcategory = null, onBackToCatalog }) {
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [products, setProducts] = useState([]);
   const [error, setError] = useState(null);
+  const [favoriteIds, setFavoriteIds] = useState([]);
   const { addItem } = useCart();
+
+  useEffect(() => {
+    try {
+      const savedFavorites = localStorage.getItem('cafeteria-favorites');
+      if (!savedFavorites) return;
+
+      const parsedFavorites = JSON.parse(savedFavorites);
+      setFavoriteIds(Array.isArray(parsedFavorites) ? parsedFavorites : []);
+    } catch (storageError) {
+      console.error('Error al cargar favoritos:', storageError);
+      setFavoriteIds([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem('cafeteria-favorites', JSON.stringify(favoriteIds));
+  }, [favoriteIds]);
 
   // Cargar productos desde la API
   useEffect(() => {
@@ -110,6 +128,10 @@ export default function ProductsGrid({ selectedCategory = 'cafes', selectedSubca
 
   // Filtrar productos basado en la categoría y subcategoría seleccionadas
   const filteredProducts = products.filter(product => {
+    if (mode === 'favorites') {
+      return favoriteIds.includes(product.id);
+    }
+
     // Filtro de categoría
     if (selectedCategory === 'otros') return false;
     if (product.category !== selectedCategory) return false;
@@ -156,8 +178,35 @@ export default function ProductsGrid({ selectedCategory = 'cafes', selectedSubca
     setSelectedProduct(null);
   };
 
+  const handleToggleFavorite = (productId) => {
+    setFavoriteIds((currentFavorites) =>
+      currentFavorites.includes(productId)
+        ? currentFavorites.filter((id) => id !== productId)
+        : [...currentFavorites, productId]
+    );
+  };
+
+  const favoriteProductsCount = products.filter((product) => favoriteIds.includes(product.id)).length;
+
   return (
     <section className="content">
+      {mode === 'favorites' && (
+        <div className="favorites-hero">
+          <div className="favorites-hero-copy">
+            <span className="favorites-eyebrow">Tu selección</span>
+            <h3>Favoritos</h3>
+            <p>
+              {favoriteProductsCount > 0
+                ? `Aquí tienes ${favoriteProductsCount} producto${favoriteProductsCount === 1 ? '' : 's'} guardado${favoriteProductsCount === 1 ? '' : 's'} para volver rápido a ellos.`
+                : 'Todavía no has marcado ningún producto como favorito.'}
+            </p>
+          </div>
+          <button className="favorites-back-btn" onClick={() => onBackToCatalog && onBackToCatalog()}>
+            Ver catálogo
+          </button>
+        </div>
+      )}
+
       <div id="products" className="products-grid">
         {isLoading ? (
           <SkeletonLoader type="product" count={4} />
@@ -187,13 +236,19 @@ export default function ProductsGrid({ selectedCategory = 'cafes', selectedSubca
               key={product.id}
               product={product} 
               onClick={handleShowDetail}
+              isFavorite={favoriteIds.includes(product.id)}
+              onToggleFavorite={handleToggleFavorite}
             />
           ))
         ) : (
           <div className="no-products">
-            <div className="no-products-icon">🔍</div>
-            <h4>No hay productos</h4>
-            <p>No se encontraron productos en esta categoría</p>
+            <div className="no-products-icon">{mode === 'favorites' ? '❤️' : '🔍'}</div>
+            <h4>{mode === 'favorites' ? 'Aún no tienes favoritos' : 'No hay productos'}</h4>
+            <p>
+              {mode === 'favorites'
+                ? 'Pulsa el corazón de cualquier tarjeta para guardarla aquí.'
+                : 'No se encontraron productos en esta categoría'}
+            </p>
           </div>
         )}
       </div>

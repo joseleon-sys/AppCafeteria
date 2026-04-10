@@ -1,29 +1,34 @@
-import React, { useState } from "react";
-import HamsterSpinner from "./HamsterSpinner";
+import React from "react";
 import { useCart } from "../lib/CartContext";
 import './BottomNav.css';
 
-export default function BottomNav({ onShowSpinner, onShowCart, onShowHistory, onShowProfile }) {
-  const [activeTab, setActiveTab] = useState('home');
+export default function BottomNav({ activeTab = 'home', onTabChange, onShowSpinner, onShowCart, onShowHistory, onShowProfile }) {
   const { cartItems } = useCart();
+  const transitionDurationMs = 600;
   
   const cartCount = cartItems.reduce((total, item) => total + item.quantity, 0);
 
   const handleNavClick = (tabId, action) => {
-    setActiveTab(tabId);
-    
     if (action === 'cart') {
+      onTabChange && onTabChange(tabId);
       onShowCart && onShowCart();
     } else if (action === 'history') {
-      onShowHistory && onShowHistory();
-    } else if (action === 'profile') {
-      onShowProfile && onShowProfile();
-    } else if (action === 'loading') {
       onShowSpinner && onShowSpinner();
-      // Simular navegación
       setTimeout(() => {
-        alert(`Navegando a ${tabId}...`);
-      }, 1000);
+        onTabChange && onTabChange(tabId);
+        onShowHistory && onShowHistory();
+      }, transitionDurationMs);
+    } else if (action === 'profile') {
+      onShowSpinner && onShowSpinner();
+      setTimeout(() => {
+        onTabChange && onTabChange(tabId);
+        onShowProfile && onShowProfile();
+      }, transitionDurationMs);
+    } else if (action === 'loading') {
+      onTabChange && onTabChange(tabId);
+      onShowSpinner && onShowSpinner();
+    } else {
+      onTabChange && onTabChange(tabId);
     }
   };
 
