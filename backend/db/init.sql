@@ -36,6 +36,12 @@ CREATE TABLE IF NOT EXISTS menu_items (
   created_at TIMESTAMP DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS tipos_alergenos (
+  id SERIAL PRIMARY KEY,
+  nombre VARCHAR(100) NOT NULL,
+  slug TEXT NOT NULL UNIQUE
+);
+
 CREATE TABLE IF NOT EXISTS orders (
   id SERIAL PRIMARY KEY,
   user_id INT REFERENCES users(id) ON DELETE SET NULL,
@@ -59,6 +65,17 @@ CREATE TABLE IF NOT EXISTS order_items (
 CREATE INDEX idx_orders_user_id ON orders(user_id);
 CREATE INDEX idx_orders_status ON orders(status);
 CREATE INDEX idx_order_items_order_id ON order_items(order_id);
+
+INSERT INTO tipos_alergenos (nombre, slug) VALUES
+  ('Gluten', 'gluten'),
+  ('Lactosa', 'lactosa'),
+  ('Huevo', 'huevo'),
+  ('Frutos secos', 'frutos secos'),
+  ('Pescado', 'pescado'),
+  ('Sesamo', 'sesamo'),
+  ('Sulfitos', 'sulfitos'),
+  ('Soja', 'soja')
+ON CONFLICT (slug) DO NOTHING;
 
 -- ============================================
 -- SISTEMA PADRE-HIJO

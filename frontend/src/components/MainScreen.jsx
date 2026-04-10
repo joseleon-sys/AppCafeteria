@@ -9,7 +9,10 @@ const ALLERGEN_FILTERS = [
   { value: 'lactosa', label: 'Lactosa' },
   { value: 'huevo', label: 'Huevo' },
   { value: 'frutos secos', label: 'Frutos secos' },
-  { value: 'pescado', label: 'Pescado' }
+  { value: 'pescado', label: 'Pescado' },
+  { value: 'sesamo', label: 'Sesamo' },
+  { value: 'sulfitos', label: 'Sulfitos' },
+  { value: 'soja', label: 'Soja' }
 ];
 
 export default function MainScreen({ user, onLogout, onShowSpinner, onShowCart, onShowHistory, onShowProfile, onShowLinkParent }) {
