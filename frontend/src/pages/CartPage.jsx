@@ -13,6 +13,7 @@ import { arrowBack, checkmark, close } from 'ionicons/icons';
 import { useHistory } from 'react-router-dom';
 import CartPanel from '../components/CartPanel';
 import { useCart } from '../lib/CartContext';
+import { createCheckoutSession } from '../lib/api';
 import './CartPage.css';
 
 const CartPage = () => {
@@ -74,50 +75,38 @@ const CartPage = () => {
       return;
     }
 
+    const token = localStorage.getItem('cafeteria_token');
+    const storedUser = JSON.parse(localStorage.getItem('cafeteria_user') || 'null');
+
+    if (!token) {
+      showNotification('Necesitas iniciar sesión para pagar', 'warning');
+      return;
+    }
+
+    if (storedUser?.role === 'child' || storedUser?.isAdult === false) {
+      showNotification('Los perfiles de menor no pueden usar este flujo de pago', 'warning');
+      return;
+    }
+
     setIsProcessingOrder(true);
 
     try {
-      // Simular tiempo de procesamiento (en la app real sería la llamada API)
-      await new Promise(resolve => setTimeout(resolve, 3000));
+      const itemsPayload = cartItems.map(item => ({
+        product_id: item.id,
+        quantity: item.quantity
+      }));
 
-      // Preparar datos del pedido según el contrato API
-      const orderData = {
-        user_id: 101, // Esto vendría del contexto de autenticación
-        items: cartItems.map(item => ({
-          product_id: item.id,
-          quantity: item.quantity,
-          notes: item.notes,
-          chosen_options: item.chosen_options
-        }))
-      };
+      const data = await createCheckoutSession(itemsPayload);
 
-      // Llamar a la API
-      const response = await fetch('/api/orders', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          // 'Authorization': `Bearer ${userToken}` // Si usas JWT
-        },
-        body: JSON.stringify(orderData)
-      });
-
-      const data = await response.json();
-
-      if (response.ok) {
-        // Pedido exitoso
-        showNotification('¡Pedido realizado con éxito!', 'success');
-        clearCart();
-        
-        // Redirigir a página de confirmación o pedidos
-        setTimeout(() => {
-          history.push('/orders');
-        }, 2000);
-      } else {
-        showNotification(data.message || 'Error al procesar el pedido', 'danger');
+      if (data?.url) {
+        window.location.href = data.url;
+        return;
       }
+
+      showNotification('No se pudo iniciar el pago. Intenta de nuevo.', 'danger');
     } catch (error) {
       console.error('Error processing checkout:', error);
-      showNotification('Error de conexión. Inténtalo de nuevo.', 'danger');
+      showNotification(error.message || 'Error de conexión. Inténtalo de nuevo.', 'danger');
     } finally {
       setIsProcessingOrder(false);
     }
