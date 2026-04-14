@@ -10,6 +10,7 @@ import HistoryModal from "./components/HistoryModal";
 import ProfileModal from "./components/ProfileModal";
 import LinkParentModal from "./components/LinkParentModal";
 import Dialog from "./components/Dialog";
+import PagoExitoso from "./pages/PagoExitoso";
 import { getCurrentUser } from "./lib/api";
 
 
@@ -20,6 +21,7 @@ export default function AppMobile() {
   const [showHistory, setShowHistory] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
   const [showLinkParent, setShowLinkParent] = useState(false);
+  const [currentPath, setCurrentPath] = useState(window.location.pathname);
 
   // Rehidratar sesión desde token al montar el componente
   useEffect(() => {
@@ -109,6 +111,20 @@ export default function AppMobile() {
   }, []);
 
   useEffect(() => {
+    const path = window.location.pathname;
+    setCurrentPath(path);
+
+    if (path === '/carrito') {
+      setShowCart(true);
+      window.history.replaceState({}, '', '/');
+    }
+
+    if (path === '/pago-exitoso') {
+      window.history.replaceState({}, '', '/pago-exitoso');
+    }
+  }, []);
+
+  useEffect(() => {
     if (!showSpinner) return undefined;
 
     const spinnerTimeout = setTimeout(() => {
@@ -128,7 +144,9 @@ export default function AppMobile() {
           <Dialog />
         </>
       )}
-      {!user ? (
+      {currentPath === '/pago-exitoso' ? (
+        <PagoExitoso />
+      ) : !user ? (
         <FancyLogin onLogin={setUser} />
       ) : user.role === "admin" ? (
         <AdminDashboard onLogout={handleLogout} />

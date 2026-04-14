@@ -1,7 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
-import bcrypt from 'bcrypt';
+import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { randomBytes } from 'crypto';
 import { createClient } from '@supabase/supabase-js';
@@ -9,6 +9,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import pkg from 'pg';
 const { Pool } = pkg;
+import Stripe from 'stripe';
 import { 
   loginRateLimiter, 
   registrationRateLimiter, 
@@ -69,6 +70,9 @@ const pool = new Pool({
 pool.on('error', (err) => {
   console.error('Error en pool:', err);
 });
+
+// Inicializar Stripe
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
 // Middlewares
 app.use(cors());
@@ -586,10 +590,11 @@ async function validateOrderItems(items = [], options = {}) {
   const validatedItems = [];
 
   for (const rawItem of items) {
-    const productId = Number.parseInt(rawItem?.product_id, 10);
+    const productId = rawItem?.product_id;
     const quantity = Number.parseInt(rawItem?.quantity, 10);
+    const normalizedProductId = String(productId || '').trim();
 
-    if (Number.isNaN(productId)) {
+    if (!normalizedProductId) {
       throw buildValidationError('Producto invalido');
     }
 
@@ -597,9 +602,9 @@ async function validateOrderItems(items = [], options = {}) {
       throw buildValidationError('Cantidad invalida (1-50)');
     }
 
-    const product = await findCatalogProductById(productId);
+    const product = await findCatalogProductById(normalizedProductId);
     if (!product) {
-      throw buildValidationError(`Producto ${productId} no encontrado`);
+      throw buildValidationError(`Producto ${normalizedProductId} no encontrado`);
     }
 
     if (!product.active) {
@@ -1112,7 +1117,7 @@ app.post('/api/auth/login', loginRateLimiter, async (req, res) => {
     if (email === 'demo@demo.com' && password === 'demo') {
       resetLoginAttempts(clientIP);
       const token = jwt.sign(
-        { id: 999, email: 'demo@demo.com', role: 'customer' },
+        { id: 999, email: 'demo@demo.com', role: 'customer', isAdult: true },
         JWT_SECRET,
         { expiresIn: '7d' }
       );
@@ -1145,7 +1150,7 @@ app.post('/api/auth/login', loginRateLimiter, async (req, res) => {
     if ((email === 'admin@admin' || email === 'admin@admin.com') && password === 'admin') {
       resetLoginAttempts(clientIP);
       const token = jwt.sign(
-        { id: 1, email: email, role: 'admin' },
+        { id: 1, email: email, role: 'admin', isAdult: true },
         JWT_SECRET,
         { expiresIn: '7d' }
       );
@@ -1253,7 +1258,7 @@ app.post('/api/auth/login', loginRateLimiter, async (req, res) => {
     
     // Generar JWT
     const token = jwt.sign(
-      { id: user.id, email: user.email, role: user.role },
+      { id: user.id, email: user.email, role: user.role, isAdult: Boolean(user.is_adult) },
       JWT_SECRET,
       { expiresIn: '7d' }
     );
@@ -1522,6 +1527,51 @@ app.post('/api/orders', authenticateToken, async (req, res) => {
   } catch (error) {
     console.error('Error al crear pedido estandar:', error);
     return res.status(error.statusCode || 500).json({ error: error.message || 'Error al crear el pedido' });
+  }
+});
+
+// ============================================
+// STRIPE CHECKOUT SESSION
+// ============================================
+
+app.post('/api/stripe/create-checkout-session', authenticateToken, async (req, res) => {
+  try {
+    const { items } = req.body || {};
+
+    if (!Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ error: 'El carrito está vacío' });
+    }
+
+    const validatedOrder = await validateOrderItems(items, { userId: req.user.id });
+
+    const line_items = validatedOrder.items.map((item) => ({
+      price_data: {
+        currency: 'eur',
+        product_data: {
+          name: item.product_name
+        },
+        unit_amount: Math.round(Number(item.price) * 100)
+      },
+      quantity: item.quantity
+    }));
+
+    const session = await stripe.checkout.sessions.create({
+      mode: 'payment',
+      line_items,
+      success_url: `${process.env.FRONTEND_URL}/pago-exitoso?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${process.env.FRONTEND_URL}/carrito`,
+      metadata: {
+        user_id: String(req.user.id)
+      }
+    });
+
+    return res.json({ url: session.url });
+  } catch (error) {
+    console.error('Error creando checkout session:', error);
+    const detailedMessage = error?.raw?.message || error?.message || 'Error al iniciar el pago con Stripe';
+    return res.status(error.statusCode || 500).json({
+      error: process.env.NODE_ENV === 'production' ? 'Error al iniciar el pago con Stripe' : detailedMessage
+    });
   }
 });
 

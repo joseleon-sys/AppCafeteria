@@ -99,6 +99,13 @@ export async function createOrder(orderData) {
   }, { auth: true, contentType: true });
 }
 
+export async function createCheckoutSession(items = []) {
+  return apiRequest('/api/stripe/create-checkout-session', {
+    method: 'POST',
+    body: JSON.stringify({ items }),
+  }, { auth: true, contentType: true });
+}
+
 export async function getOrder(id) {
   return apiRequest(`/api/orders/${id}`, {}, { auth: true });
 }

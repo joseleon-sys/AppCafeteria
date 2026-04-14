@@ -33,7 +33,7 @@ function buildItemNotes(item) {
 
 export function mapCartItemsToOrderPayload(cartItems = []) {
   return cartItems.map((item) => ({
-    product_id: Number.parseInt(item.id, 10),
+    product_id: item.id,
     quantity: item.quantity,
     notes: buildItemNotes(item),
     chosen_options: item.chosen_options || {},

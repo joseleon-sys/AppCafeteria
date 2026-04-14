@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { useCart } from "../lib/CartContext";
 import { showError, showSuccess } from "./Toast";
-import { submitOrderForUser } from "../lib/orderService";
+import { createCheckoutSession } from "../lib/api";
 import "./CheckoutModal.css";
 
 export default function CheckoutModal({ isOpen, onClose, user }) {
@@ -30,20 +30,31 @@ export default function CheckoutModal({ isOpen, onClose, user }) {
     }
 
     if (!user) {
-      showError('Necesitas iniciar sesion para confirmar el pedido');
+      showError('Necesitas iniciar sesión para confirmar el pedido');
+      return;
+    }
+
+    if (user.role === 'child' || user.isAdult === false) {
+      showError('Los perfiles de menor no pueden usar este flujo de pago');
       return;
     }
 
     setIsProcessing(true);
 
     try {
-      await submitOrderForUser(user, cartItems);
-      clearCart();
-      onClose && onClose();
-      showSuccess(user.role === 'child'
-        ? 'Pedido enviado a revision familiar'
-        : 'Pedido confirmado. Ya esta registrado en produccion.'
-      );
+      const itemsPayload = cartItems.map(item => ({
+        product_id: item.id,
+        quantity: item.quantity
+      }));
+
+      const data = await createCheckoutSession(itemsPayload);
+
+      if (data?.url) {
+        window.location.href = data.url;
+        return;
+      }
+
+      showError('No se pudo iniciar el pago. Inténtalo de nuevo.');
     } catch (error) {
       console.error('Error al confirmar pedido:', error);
       showError(error.message || 'No se pudo confirmar el pedido');
