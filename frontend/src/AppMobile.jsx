@@ -11,6 +11,7 @@ import ProfileModal from "./components/ProfileModal";
 import LinkParentModal from "./components/LinkParentModal";
 import Dialog from "./components/Dialog";
 import { getCurrentUser } from "./lib/api";
+import { bootstrapPushNotifications } from "./lib/pushNotifications";
 
 
 export default function AppMobile() {
@@ -87,6 +88,14 @@ export default function AppMobile() {
     if (user) {
       localStorage.setItem('cafeteria_user', JSON.stringify(user));
     }
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
+
+    bootstrapPushNotifications().catch((error) => {
+      console.error('No se pudieron inicializar las notificaciones push:', error);
+    });
   }, [user]);
 
   const handleLogout = () => {

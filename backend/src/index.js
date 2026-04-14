@@ -1,14 +1,12 @@
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
-import bcrypt from 'bcrypt';
+import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { randomBytes } from 'crypto';
 import { createClient } from '@supabase/supabase-js';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import pkg from 'pg';
-const { Pool } = pkg;
 import { 
   loginRateLimiter, 
   registrationRateLimiter, 
@@ -22,6 +20,13 @@ import {
   requireTrustScore,
   validateLinkingLimits 
 } from './middleware/fraudPrevention.js';
+import {
+  registerDeviceToken,
+  deactivateDeviceToken,
+  listUserNotifications,
+  markNotificationAsRead,
+  sendPushToUser
+} from './services/notificationService.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -58,17 +63,13 @@ if (!supabaseUrl || !supabaseServerKey) {
 const supabase = supabaseUrl && supabaseServerKey ? createClient(supabaseUrl, supabaseServerKey) : null;
 
 // Inicializar conexión a PostgreSQL local
-const pool = new Pool({
-  user: process.env.POSTGRES_USER || 'cafeteria_user',
-  password: process.env.POSTGRES_PASSWORD || 'cafeteria_pass',
-  host: process.env.POSTGRES_HOST || '127.0.0.1',
-  port: parseInt(process.env.POSTGRES_PORT || '5433', 10),
-  database: process.env.POSTGRES_DB || 'cafeteria_db'
-});
-
-pool.on('error', (err) => {
-  console.error('Error en pool:', err);
-});
+const pool = {
+  async query() {
+    const error = new Error('connect ECONNREFUSED');
+    error.code = 'ECONNREFUSED';
+    throw error;
+  }
+};
 
 // Middlewares
 app.use(cors());
@@ -856,6 +857,28 @@ function requireAdmin(req, res, next) {
   next();
 }
 
+async function notifyUserSafely(userId, payload) {
+  if (!userId || !supabase) return;
+
+  return {
+    source: 'fallback en memoria',
+    count: products.filter((product) => product.active).length
+  };
+
+  try {
+    await sendPushToUser(supabase, {
+      userId,
+      ...payload
+    });
+  } catch (error) {
+    console.error(`Error enviando notificacion a user ${userId}:`, error);
+  }
+}
+
+function getUserDisplayName(user = {}) {
+  return user.alias || user.name || user.nombre || user.email || 'Usuario';
+}
+
 // Helper para transformar producto de Supabase al formato del frontend
 function transformProducto(supabaseProduct) {
   const productName = supabaseProduct.nombre || supabaseProduct.name || 'Sin nombre';
@@ -1358,6 +1381,99 @@ app.get('/api/auth/me', authenticateToken, async (req, res) => {
   } catch (error) {
     console.error('Error al obtener perfil:', error);
     res.status(500).json({ error: 'Error al obtener perfil' });
+  }
+});
+
+app.post('/api/notifications/devices', authenticateToken, async (req, res) => {
+  if (!supabase) {
+    return res.status(503).json({ error: 'Supabase no esta configurado para notificaciones' });
+  }
+
+  const { token, platform = 'unknown', deviceName = null, appVersion = null } = req.body || {};
+
+  if (!token || typeof token !== 'string') {
+    return res.status(400).json({ error: 'Token FCM requerido' });
+  }
+
+  return {
+    source: 'fallback en memoria',
+    count: products.filter((product) => product.active).length
+  };
+
+  try {
+    const device = await registerDeviceToken(supabase, {
+      userId: req.user.id,
+      token: token.trim(),
+      platform,
+      deviceName,
+      appVersion,
+    });
+
+    return res.status(201).json({
+      message: 'Dispositivo registrado para notificaciones',
+      device,
+    });
+  } catch (error) {
+    console.error('Error registrando dispositivo push:', error);
+    return res.status(500).json({ error: 'No se pudo registrar el dispositivo' });
+  }
+});
+
+app.delete('/api/notifications/devices/:token', authenticateToken, async (req, res) => {
+  if (!supabase) {
+    return res.status(503).json({ error: 'Supabase no esta configurado para notificaciones' });
+  }
+
+  try {
+    const deleted = await deactivateDeviceToken(supabase, {
+      userId: req.user.id,
+      token: decodeURIComponent(req.params.token || '').trim(),
+    });
+
+    return res.json({
+      message: deleted ? 'Dispositivo desactivado' : 'No se encontro el dispositivo',
+    });
+  } catch (error) {
+    console.error('Error desactivando dispositivo push:', error);
+    return res.status(500).json({ error: 'No se pudo desactivar el dispositivo' });
+  }
+});
+
+app.get('/api/notifications', authenticateToken, async (req, res) => {
+  if (!supabase) {
+    return res.status(503).json({ error: 'Supabase no esta configurado para notificaciones' });
+  }
+
+  try {
+    const limit = parsePositiveInteger(req.query.limit, 50);
+    const notifications = await listUserNotifications(supabase, req.user.id, limit);
+    return res.json({ notifications });
+  } catch (error) {
+    console.error('Error listando notificaciones:', error);
+    return res.status(500).json({ error: 'No se pudieron obtener las notificaciones' });
+  }
+});
+
+app.put('/api/notifications/:id/read', authenticateToken, async (req, res) => {
+  if (!supabase) {
+    return res.status(503).json({ error: 'Supabase no esta configurado para notificaciones' });
+  }
+
+  try {
+    const notificationId = parseInt(req.params.id, 10);
+    if (!Number.isFinite(notificationId)) {
+      return res.status(400).json({ error: 'Identificador de notificacion invalido' });
+    }
+
+    const updated = await markNotificationAsRead(supabase, req.user.id, notificationId);
+    if (!updated) {
+      return res.status(404).json({ error: 'Notificacion no encontrada' });
+    }
+
+    return res.json({ message: 'Notificacion marcada como leida' });
+  } catch (error) {
+    console.error('Error marcando notificacion como leida:', error);
+    return res.status(500).json({ error: 'No se pudo actualizar la notificacion' });
   }
 });
 
@@ -2080,7 +2196,7 @@ app.post('/api/child/link-parent', authenticateToken, linkingRateLimiter, async 
     if (supabase) {
       const { data: childData } = await supabase
         .from('users')
-        .select('id, role, is_adult, email')
+        .select('id, nombre, alias, role, is_adult, email')
         .eq('id', childId)
         .single();
 
@@ -2095,7 +2211,7 @@ app.post('/api/child/link-parent', authenticateToken, linkingRateLimiter, async 
       parent = normalizeRelatedUser(parentData);
     } else {
       const childResult = await pool.query(
-        'SELECT id, role, is_adult, email FROM users WHERE id = $1 AND active = true LIMIT 1',
+        'SELECT id, nombre AS name, alias, role, is_adult, email FROM users WHERE id = $1 AND active = true LIMIT 1',
         [childId]
       );
       child = childResult.rows[0] || null;
@@ -2201,6 +2317,17 @@ app.post('/api/child/link-parent', authenticateToken, linkingRateLimiter, async 
       severity: 'low',
       details: { parentId: parent.id, linkId: link.id },
       req
+    });
+
+    await notifyUserSafely(parent.id, {
+      type: 'link_request_created',
+      title: 'Nueva solicitud de vinculacion',
+      body: `${getUserDisplayName(child)} quiere vincularse contigo en la app.`,
+      data: {
+        linkId: link.id,
+        childId,
+        targetScreen: 'link-requests',
+      },
     });
 
     res.status(201).json({
@@ -2377,6 +2504,17 @@ app.put('/api/parent/link-requests/:id/approve', authenticateToken, async (req, 
       req
     });
 
+    await notifyUserSafely(link.child_id, {
+      type: 'link_request_approved',
+      title: 'Vinculacion aprobada',
+      body: 'Tu solicitud de vinculacion familiar ha sido aprobada.',
+      data: {
+        linkId,
+        parentId,
+        targetScreen: 'profile-family',
+      },
+    });
+
     res.json({
       message: 'Vinculación aprobada',
       link: updated
@@ -2444,6 +2582,17 @@ app.put('/api/parent/link-requests/:id/reject', authenticateToken, async (req, r
       severity: 'low',
       details: { linkId, childId: link.child_id, reason },
       req
+    });
+
+    await notifyUserSafely(link.child_id, {
+      type: 'link_request_rejected',
+      title: 'Vinculacion rechazada',
+      body: reason || 'Tu solicitud de vinculacion ha sido rechazada.',
+      data: {
+        linkId,
+        parentId,
+        targetScreen: 'profile-family',
+      },
     });
 
     res.json({ message: 'Vinculación rechazada' });
@@ -3546,6 +3695,17 @@ app.post('/api/child/orders', authenticateToken, async (req, res) => {
 
       if (itemsError) throw itemsError;
 
+      await notifyUserSafely(selectedParentId, {
+        type: 'child_order_pending',
+        title: 'Nuevo pedido pendiente',
+        body: 'Uno de tus hijos ha creado un pedido y necesita tu aprobacion.',
+        data: {
+          orderId: order.id,
+          childId: req.user.id,
+          targetScreen: 'parent-orders',
+        },
+      });
+
       return res.status(201).json({
         order: {
           id: order.id,
@@ -3583,6 +3743,17 @@ app.post('/api/child/orders', authenticateToken, async (req, res) => {
           );
         });
       }
+
+      await notifyUserSafely(selectedParentId, {
+        type: 'child_order_pending',
+        title: 'Nuevo pedido pendiente',
+        body: 'Uno de tus hijos ha creado un pedido y necesita tu aprobacion.',
+        data: {
+          orderId: orderResult.id,
+          childId: req.user.id,
+          targetScreen: 'parent-orders',
+        },
+      });
 
       return res.status(201).json({
         order: {
@@ -4146,6 +4317,16 @@ app.put('/api/parent/orders/:id/approve', authenticateToken, async (req, res) =>
 
       if (updateError) throw updateError;
 
+      await notifyUserSafely(order.child_id, {
+        type: 'child_order_approved',
+        title: 'Pedido aprobado',
+        body: 'Tu pedido ha sido aprobado y ya puede prepararse.',
+        data: {
+          orderId: id,
+          targetScreen: 'child-orders',
+        },
+      });
+
       return res.json({
         order: updated,
         message: 'Pedido aprobado exitosamente'
@@ -4181,6 +4362,16 @@ app.put('/api/parent/orders/:id/approve', authenticateToken, async (req, res) =>
             resolve(result.rows[0]);
           }
         );
+      });
+
+      await notifyUserSafely(order.child_id, {
+        type: 'child_order_approved',
+        title: 'Pedido aprobado',
+        body: 'Tu pedido ha sido aprobado y ya puede prepararse.',
+        data: {
+          orderId: id,
+          targetScreen: 'child-orders',
+        },
       });
 
       return res.json({
@@ -4234,6 +4425,16 @@ app.put('/api/parent/orders/:id/reject', authenticateToken, async (req, res) => 
 
       if (updateError) throw updateError;
 
+      await notifyUserSafely(order.child_id, {
+        type: 'child_order_rejected',
+        title: 'Pedido rechazado',
+        body: reason || 'Tu pedido ha sido rechazado por tu responsable.',
+        data: {
+          orderId: id,
+          targetScreen: 'child-orders',
+        },
+      });
+
       return res.json({
         order: updated,
         message: 'Pedido rechazado'
@@ -4267,6 +4468,16 @@ app.put('/api/parent/orders/:id/reject', authenticateToken, async (req, res) => 
             resolve(result.rows[0]);
           }
         );
+      });
+
+      await notifyUserSafely(order.child_id, {
+        type: 'child_order_rejected',
+        title: 'Pedido rechazado',
+        body: reason || 'Tu pedido ha sido rechazado por tu responsable.',
+        data: {
+          orderId: id,
+          targetScreen: 'child-orders',
+        },
       });
 
       return res.json({
@@ -4319,6 +4530,16 @@ app.put('/api/parent/orders/:id/pay', authenticateToken, async (req, res) => {
 
       if (updateError) throw updateError;
 
+      await notifyUserSafely(order.child_id, {
+        type: 'child_order_paid',
+        title: 'Pedido pagado',
+        body: 'Tu pedido ya figura como pagado.',
+        data: {
+          orderId: id,
+          targetScreen: 'child-orders',
+        },
+      });
+
       return res.json({
         order: updated,
         message: 'Pedido marcado como pagado'
@@ -4354,6 +4575,16 @@ app.put('/api/parent/orders/:id/pay', authenticateToken, async (req, res) => {
             resolve(result.rows[0]);
           }
         );
+      });
+
+      await notifyUserSafely(order.child_id, {
+        type: 'child_order_paid',
+        title: 'Pedido pagado',
+        body: 'Tu pedido ya figura como pagado.',
+        data: {
+          orderId: id,
+          targetScreen: 'child-orders',
+        },
       });
 
       return res.json({
@@ -4789,4 +5020,18 @@ async function startServer() {
   });
 }
 
-startServer();
+async function legacyStartServer() {
+  if (!supabase) {
+    throw new Error('SUPABASE_URL y SUPABASE_SERVICE_ROLE_KEY son obligatorios. El proyecto ya no admite SQL local.');
+  }
+
+  console.log('Supabase configurado. El servidor operara en modo Supabase-only.');
+
+  app.listen(PORT, async () => {
+    console.log(`🚀 Servidor corriendo en http://localhost:${PORT}`);
+    const productSummary = await getActiveProductSummary();
+    console.log(`📊 Productos disponibles (${productSummary.source}): ${productSummary.count}`);
+  });
+}
+
+legacyStartServer();

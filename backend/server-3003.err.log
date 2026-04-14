@@ -1,0 +1,23 @@
+⚠️ Supabase no devolvio productos activos: TypeError: fetch failed
+Error registrando dispositivo push: Error: connect ECONNREFUSED 127.0.0.1:5433
+    at C:\Users\Usuario\Documents\GitHub\AppCafeteria\backend\node_modules\pg-pool\index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async registerDeviceToken (file:///C:/Users/Usuario/Documents/GitHub/AppCafeteria/backend/src/services/notificationService.js:104:18)
+    at async file:///C:/Users/Usuario/Documents/GitHub/AppCafeteria/backend/src/index.js:1397:20 {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 5433
+}
+Error listando notificaciones: Error: connect ECONNREFUSED 127.0.0.1:5433
+    at C:\Users\Usuario\Documents\GitHub\AppCafeteria\backend\node_modules\pg-pool\index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async listUserNotifications (file:///C:/Users/Usuario/Documents/GitHub/AppCafeteria/backend/src/services/notificationService.js:164:18)
+    at async file:///C:/Users/Usuario/Documents/GitHub/AppCafeteria/backend/src/index.js:1434:27 {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 5433
+}

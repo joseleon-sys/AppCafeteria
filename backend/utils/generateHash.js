@@ -1,4 +1,4 @@
-import bcrypt from 'bcrypt';
+import bcrypt from 'bcryptjs';
 
 // Script para generar hash de contraseñas
 // Uso: node utils/generateHash.js <password>

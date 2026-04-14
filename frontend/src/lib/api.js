@@ -250,6 +250,33 @@ export async function getAdminStatistics() {
   return apiRequest('/api/admin/statistics', {}, { auth: true });
 }
 
+export async function registerDeviceToken(payload) {
+  return apiRequest('/api/notifications/devices', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }, { auth: true, contentType: true });
+}
+
+export async function unregisterDeviceToken(token) {
+  return apiRequest(`/api/notifications/devices/${encodeURIComponent(token)}`, {
+    method: 'DELETE',
+  }, { auth: true });
+}
+
+export async function getMyNotifications(limit = 50) {
+  const params = new URLSearchParams();
+  if (limit) params.append('limit', String(limit));
+  const suffix = params.toString() ? `?${params.toString()}` : '';
+
+  return apiRequest(`/api/notifications${suffix}`, {}, { auth: true });
+}
+
+export async function markNotificationAsRead(notificationId) {
+  return apiRequest(`/api/notifications/${notificationId}/read`, {
+    method: 'PUT',
+  }, { auth: true });
+}
+
 export async function getAdminOrderQueue() {
   return apiRequest('/api/admin/orders/queue', {}, { auth: true });
 }
@@ -315,6 +342,10 @@ export default {
   markOrderAsPaid,
   getOrderHistory,
   getAdminStatistics,
+  registerDeviceToken,
+  unregisterDeviceToken,
+  getMyNotifications,
+  markNotificationAsRead,
   getAdminOrderQueue,
   getFraudLog,
   getAllUsers,
