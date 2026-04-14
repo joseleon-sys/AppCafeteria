@@ -1,4 +1,0 @@
-☁️ Supabase configurado. Se priorizara como origen principal de datos.
-ℹ️ PostgreSQL local no disponible. El servidor continuara usando Supabase.
-🚀 Servidor corriendo en http://localhost:3002
-📊 Productos disponibles (fallback en memoria): 26
