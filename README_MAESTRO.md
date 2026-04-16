@@ -10,7 +10,8 @@
 ### 🎯 Para Entender el Proyecto
 1. **[VISION_GENERAL.md](./VISION_GENERAL.md)** - Visión general del proyecto
 2. **[ESTADO_IMPLEMENTACION.md](./ESTADO_IMPLEMENTACION.md)** - Estado actual SPRINT (Seguridad + Fase 3)
-3. **README_MAESTRO.md** ← **ESTÁS AQUÍ** (Índice integrado + flujos + endpoints)
+3. **[COMO_FUNCIONA_EL_PROYECTO.md](./COMO_FUNCIONA_EL_PROYECTO.md)** - Guía funcional por módulos y flujos reales del código
+4. **README_MAESTRO.md** ← **ESTÁS AQUÍ** (Índice integrado + flujos + endpoints)
 
 ### 👥 Sistema Padre-Hijo (Core)
 - **[SISTEMA_PADRE_HIJO.md](./SISTEMA_PADRE_HIJO.md)** - Arquitectura BD + flujos + medidas anti-fraude
@@ -607,6 +608,18 @@ Padre ve historial de pedidos (aprobados + pagados)
 ## ❌ LO QUE FALTA POR IMPLEMENTAR
 
 ### 🚨 CRÍTICO (Antes de producción)
+
+#### 0. **Retirar ayudas temporales de desarrollo y pruebas**
+Antes de desplegar a producción hay que revisar y desactivar cualquier atajo, bypass o comportamiento pensado para testing local.
+
+- [ ] Confirmar que no quedan flags de desarrollo activas en `.env`
+- [ ] Eliminar o desactivar bypass de pago, respuestas mock, redirecciones especiales y flujos sin cobro real
+- [ ] Revisar que cualquier fallback pensado para QA no quede accesible desde usuarios reales
+- [ ] Verificar manualmente el flujo real de pago en entorno preproductivo
+
+**Ejemplo actual a retirar o dejar desactivado:** `DEV_BYPASS_STRIPE_PAYMENT`
+
+**Regla de equipo:** toda característica temporal que altere seguridad, cobro, autenticación, permisos o integridad de pedidos debe documentarse y quedar fuera de producción antes del release.
 
 #### 1. **Admin Dashboard** 🔴
 Interfaz de administrador para:

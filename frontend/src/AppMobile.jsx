@@ -23,6 +23,7 @@ export default function AppMobile() {
   const [showProfile, setShowProfile] = useState(false);
   const [showLinkParent, setShowLinkParent] = useState(false);
   const [currentPath, setCurrentPath] = useState(window.location.pathname);
+  const [historyOrderId, setHistoryOrderId] = useState(null);
 
   // Rehidratar sesión desde token al montar el componente
   useEffect(() => {
@@ -121,6 +122,7 @@ export default function AppMobile() {
 
   useEffect(() => {
     const path = window.location.pathname;
+    const params = new URLSearchParams(window.location.search);
     setCurrentPath(path);
 
     if (path === '/carrito') {
@@ -130,6 +132,12 @@ export default function AppMobile() {
 
     if (path === '/pago-exitoso') {
       window.history.replaceState({}, '', '/pago-exitoso');
+    }
+
+    if (path === '/' && params.get('history') === '1') {
+      setHistoryOrderId(params.get('order_id'));
+      setShowHistory(true);
+      window.history.replaceState({}, '', '/');
     }
   }, []);
 
@@ -184,8 +192,12 @@ export default function AppMobile() {
           />
           <HistoryModal 
             isOpen={showHistory} 
-            onClose={() => setShowHistory(false)} 
+            onClose={() => {
+              setShowHistory(false);
+              setHistoryOrderId(null);
+            }}
             user={user}
+            initialOrderId={historyOrderId}
           />
           <ProfileModal 
             isOpen={showProfile} 

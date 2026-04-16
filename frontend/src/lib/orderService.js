@@ -8,8 +8,26 @@ import {
   getOrderHistory,
 } from './api';
 
+const DEV_BYPASS_ORDERS_STORAGE_KEY = 'cafeteria_dev_bypass_orders';
+
 function normalizeCurrency(value) {
   return Number.parseFloat(value || 0) || 0;
+}
+
+function normalizeItems(items = []) {
+  if (!Array.isArray(items)) return [];
+
+  return items
+    .filter((item) => item && typeof item === 'object')
+    .map((item) => ({
+      ...item,
+      quantity: Number.parseInt(item.quantity, 10) || 1,
+      price: normalizeCurrency(item.price),
+      subtotal: normalizeCurrency(item.subtotal ?? ((Number.parseFloat(item.price) || 0) * (Number.parseInt(item.quantity, 10) || 1))),
+      product_name: item.product_name || item.nombre_producto || item.name || 'Producto',
+      name: item.name || item.product_name || item.nombre_producto || 'Producto',
+      notes: item.notes || item.notas || '',
+    }));
 }
 
 function buildItemNotes(item) {
@@ -69,8 +87,10 @@ export async function submitOrderForUser(user, cartItems) {
 
 function summarizeItems(items = []) {
   if (!Array.isArray(items) || items.length === 0) return 'Sin productos';
-  if (items.length === 1) return items[0].product_name || items[0].name || 'Producto';
-  return `${items[0].product_name || items[0].name || 'Producto'} + ${items.length - 1} mas`;
+  const firstItem = items.find((item) => item && typeof item === 'object');
+  if (!firstItem) return 'Sin productos';
+  if (items.length === 1) return firstItem.product_name || firstItem.name || 'Producto';
+  return `${firstItem.product_name || firstItem.name || 'Producto'} + ${items.length - 1} mas`;
 }
 
 function normalizeOrderStatus(status) {
@@ -93,25 +113,57 @@ function normalizeOrderStatus(status) {
 }
 
 function normalizeHistoryEntry(order, source) {
-  const total = normalizeCurrency(order.total);
-  const createdAt = order.created_at || order.fecha_creacion || order.date || new Date().toISOString();
-  const items = Array.isArray(order.items) ? order.items : [];
-  const child = order.child || null;
-  const childName = child?.name || child?.nombre || order.child_name || '';
-  const normalizedStatus = normalizeOrderStatus(order.status || order.estado);
+  const safeOrder = order && typeof order === 'object' ? order : {};
+  const total = normalizeCurrency(safeOrder.total);
+  const createdAt = safeOrder.created_at || safeOrder.fecha_creacion || safeOrder.date || new Date().toISOString();
+  const items = normalizeItems(safeOrder.items);
+  const child = safeOrder.child || null;
+  const childName = child?.name || child?.nombre || safeOrder.child_name || '';
+  const normalizedStatus = normalizeOrderStatus(safeOrder.status || safeOrder.estado);
 
   return {
-    id: order.id,
+    id: safeOrder.id,
     source,
     date: createdAt,
     status: normalizedStatus,
     total,
-    itemsCount: order.items_count || items.length || 0,
+    itemsCount: safeOrder.items_count || items.length || 0,
     items,
     summary: summarizeItems(items),
-    notes: order.notes || '',
+    notes: safeOrder.notes || '',
     childName,
   };
+}
+
+function extractOrders(response) {
+  if (!response || typeof response !== 'object') return [];
+  if (Array.isArray(response.orders)) return response.orders;
+  if (Array.isArray(response.history)) return response.history;
+  return [];
+}
+
+function readStoredDevBypassOrders() {
+  if (typeof window === 'undefined') return [];
+
+  try {
+    const raw = window.localStorage.getItem(DEV_BYPASS_ORDERS_STORAGE_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeStoredDevBypassOrders(orders) {
+  if (typeof window === 'undefined') return;
+  window.localStorage.setItem(DEV_BYPASS_ORDERS_STORAGE_KEY, JSON.stringify(orders));
+}
+
+export function storeDevBypassOrder(order) {
+  if (!order?.id) return;
+
+  const existing = readStoredDevBypassOrders().filter((entry) => String(entry.id) !== String(order.id));
+  writeStoredDevBypassOrders([order, ...existing].slice(0, 20));
 }
 
 export async function fetchOrderHistoryForUser(user) {
@@ -119,16 +171,32 @@ export async function fetchOrderHistoryForUser(user) {
 
   if (user.role === 'child') {
     const response = await getMyChildOrders();
-    return (response.orders || []).map((order) => normalizeHistoryEntry(order, 'child'));
+    return extractOrders(response).map((order) => normalizeHistoryEntry(order, 'child'));
   }
 
   if (user.role === 'parent') {
-    const response = await getOrderHistory({});
-    return (response.orders || []).map((order) => normalizeHistoryEntry(order, 'parent'));
+    try {
+      const response = await getOrderHistory({});
+      return extractOrders(response).map((order) => normalizeHistoryEntry(order, 'parent'));
+    } catch {
+      const fallbackResponse = await getMyOrders();
+      return extractOrders(fallbackResponse).map((order) => normalizeHistoryEntry(order, 'standard'));
+    }
   }
 
   const response = await getMyOrders();
-  return (response.orders || []).map((order) => normalizeHistoryEntry(order, 'standard'));
+  const apiOrders = extractOrders(response).map((order) => normalizeHistoryEntry(order, 'standard'));
+  const localDevOrders = readStoredDevBypassOrders()
+    .filter((order) => String(order.user_id) === String(user.userId || user.id))
+    .map((order) => normalizeHistoryEntry(order, 'standard'));
+
+  const seen = new Set();
+  return [...localDevOrders, ...apiOrders].filter((order) => {
+    const key = String(order.id);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 export async function fetchOrderDetailForUser(user, historyEntry) {
@@ -142,8 +210,16 @@ export async function fetchOrderDetailForUser(user, historyEntry) {
   }
 
   if (historyEntry.source === 'standard') {
-    const response = await getOrder(historyEntry.id);
-    return normalizeHistoryEntry(response.order, 'standard');
+    try {
+      const response = await getOrder(historyEntry.id);
+      return normalizeHistoryEntry(response?.order, 'standard');
+    } catch (error) {
+      const localOrder = readStoredDevBypassOrders().find((order) => String(order.id) === String(historyEntry.id));
+      if (localOrder) {
+        return normalizeHistoryEntry(localOrder, 'standard');
+      }
+      throw error;
+    }
   }
 
   return normalizeHistoryEntry(historyEntry, historyEntry.source || 'parent');

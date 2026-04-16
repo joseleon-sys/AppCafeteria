@@ -3,15 +3,23 @@ import "./HistoryModal.css";
 import { showError } from "./Toast";
 import { fetchOrderDetailForUser, fetchOrderHistoryForUser } from "../lib/orderService";
 
-export default function HistoryModal({ isOpen, onClose, user }) {
+export default function HistoryModal({ isOpen, onClose, user, initialOrderId = null }) {
   const [orders, setOrders] = useState([]);
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [loading, setLoading] = useState(false);
+
+  const formatAmount = (value) => (Number.parseFloat(value || 0) || 0).toFixed(2);
+
+  const buildSafeDate = (dateStr) => {
+    const date = new Date(dateStr);
+    return Number.isNaN(date.getTime()) ? new Date() : date;
+  };
 
   useEffect(() => {
     if (!isOpen || !user) return;
 
     let cancelled = false;
+    setSelectedOrder(null);
 
     const loadHistory = async () => {
       setLoading(true);
@@ -19,6 +27,22 @@ export default function HistoryModal({ isOpen, onClose, user }) {
         const data = await fetchOrderHistoryForUser(user);
         if (!cancelled) {
           setOrders(data);
+          if (initialOrderId) {
+            const initialOrder = data.find((order) => String(order.id) === String(initialOrderId));
+            if (initialOrder) {
+              try {
+                const detail = await fetchOrderDetailForUser(user, initialOrder);
+                if (!cancelled) {
+                  setSelectedOrder(detail);
+                }
+              } catch (detailError) {
+                console.error('Error cargando pedido inicial:', detailError);
+                showError(detailError.message || 'No se pudo abrir el pedido');
+              }
+            } else {
+              showError('No se encontró el pedido solicitado en el historial');
+            }
+          }
         }
       } catch (error) {
         console.error('Error cargando historial:', error);
@@ -38,7 +62,7 @@ export default function HistoryModal({ isOpen, onClose, user }) {
     return () => {
       cancelled = true;
     };
-  }, [isOpen, user]);
+  }, [isOpen, user, initialOrderId]);
 
   const getStatusColor = (status) => {
     switch (status) {
@@ -71,7 +95,7 @@ export default function HistoryModal({ isOpen, onClose, user }) {
   };
 
   const formatDate = (dateStr) => {
-    const date = new Date(dateStr);
+    const date = buildSafeDate(dateStr);
     return date.toLocaleDateString('es-ES', {
       day: 'numeric',
       month: 'short',
@@ -80,7 +104,7 @@ export default function HistoryModal({ isOpen, onClose, user }) {
   };
 
   const formatTime = (dateStr) => {
-    const date = new Date(dateStr);
+    const date = buildSafeDate(dateStr);
     return date.toLocaleTimeString('es-ES', {
       hour: '2-digit',
       minute: '2-digit',
@@ -139,7 +163,7 @@ export default function HistoryModal({ isOpen, onClose, user }) {
                   <div key={order.id} className="order-card" onClick={() => handleOpenOrder(order)}>
                     <div className="order-card-header">
                       <div className="order-number">Nº {order.id}</div>
-                      <div className="order-price">{order.total.toFixed(2)} €</div>
+                      <div className="order-price">{formatAmount(order.total)} €</div>
                     </div>
                     <div className="order-card-body">
                       <div className="order-datetime">
@@ -219,7 +243,7 @@ export default function HistoryModal({ isOpen, onClose, user }) {
                     <div className="ticket-item-header">
                       <span className="ticket-item-qty">{item.quantity}x</span>
                       <span className="ticket-item-name">{item.product_name || item.name}</span>
-                      <span className="ticket-item-price">{(Number.parseFloat(item.subtotal || item.price * item.quantity || 0) || 0).toFixed(2)} €</span>
+                      <span className="ticket-item-price">{formatAmount(item.subtotal || item.price * item.quantity || 0)} €</span>
                     </div>
                     {item.notes && (
                       <div className="ticket-item-customizations">
@@ -235,7 +259,7 @@ export default function HistoryModal({ isOpen, onClose, user }) {
               <div className="ticket-total-section">
                 <div className="ticket-total-row">
                   <span className="ticket-total-label">TOTAL</span>
-                  <span className="ticket-total-value">{selectedOrder.total.toFixed(2)} €</span>
+                  <span className="ticket-total-value">{formatAmount(selectedOrder.total)} €</span>
                 </div>
               </div>
             </div>

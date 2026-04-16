@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { useCart } from "../lib/CartContext";
 import { showError, showSuccess } from "./Toast";
 import { createCheckoutSession } from "../lib/api";
+import { storeDevBypassOrder } from "../lib/orderService";
 import "./CheckoutModal.css";
 
 export default function CheckoutModal({ isOpen, onClose, user }) {
@@ -42,15 +43,42 @@ export default function CheckoutModal({ isOpen, onClose, user }) {
     setIsProcessing(true);
 
     try {
-      const itemsPayload = cartItems.map(item => ({
+      const itemsPayload = cartItems.map((item) => ({
         product_id: item.id,
-        quantity: item.quantity
+        quantity: item.quantity,
       }));
 
       const data = await createCheckoutSession(itemsPayload);
 
       if (data?.url) {
         window.location.href = data.url;
+        return;
+      }
+
+      if (data?.bypassed && data?.redirect_url) {
+        storeDevBypassOrder({
+          id: data.order_id,
+          user_id: user?.userId || user?.id || null,
+          status: data.status,
+          total: data.total,
+          payment_method: 'dev-bypass',
+          amount_paid: data.total,
+          paid_at: new Date().toISOString(),
+          created_at: new Date().toISOString(),
+          items: cartItems.map((item, index) => ({
+            id: `${data.order_id}-local-item-${index + 1}`,
+            product_id: item.id,
+            product_name: item.name,
+            quantity: item.quantity,
+            price: item.price,
+            subtotal: Number(item.totalPrice || item.price * item.quantity || 0),
+            notes: item.notes || '',
+          })),
+          items_count: cartItems.length,
+          is_dev_bypass: true,
+        });
+        clearCart();
+        window.location.href = data.redirect_url;
         return;
       }
 
@@ -67,43 +95,42 @@ export default function CheckoutModal({ isOpen, onClose, user }) {
 
   return (
     <div className="checkout-modal-overlay" onClick={onClose}>
-      <div className="checkout-container" onClick={e => e.stopPropagation()}>
+      <div className="checkout-container" onClick={(e) => e.stopPropagation()}>
         <div className="checkout-header">
           <h2>Confirmar Pedido</h2>
-          <button className="close-btn" onClick={onClose} aria-label="Cerrar">✕</button>
+          <button className="close-btn" onClick={onClose} aria-label="Cerrar">×</button>
         </div>
 
         <div className="checkout-content">
-          {/* Resumen de Productos */}
           <section className="checkout-section">
             <div className="section-header">
-              <h3>📦 Tus productos ({cartItems.length})</h3>
+              <h3>Tus productos ({cartItems.length})</h3>
             </div>
             <div className="products-list">
-              {cartItems.map(item => (
+              {cartItems.map((item) => (
                 <div key={`${item.id}-${item.selectedSize || 'default'}`} className="product-item">
                   <div className="product-info">
                     <div className="product-name">{item.name}</div>
                     {(item.customizations?.milk || item.selectedSize) && (
                       <div className="product-details">
-                        {item.customizations?.milk && <span className="detail-badge">🥛 {item.customizations.milk}</span>}
-                        {item.selectedSize && <span className="detail-badge">📏 {item.selectedSize}</span>}
+                        {item.customizations?.milk && <span className="detail-badge">{item.customizations.milk}</span>}
+                        {item.selectedSize && <span className="detail-badge">{item.selectedSize}</span>}
                       </div>
                     )}
-                    <div className="product-unit-price">({(item.price).toFixed(2)}€ c/u)</div>
+                    <div className="product-unit-price">({item.price.toFixed(2)}€ c/u)</div>
                   </div>
                   <div className="product-controls">
                     <div className="quantity-controls">
-                      <button 
-                        className="qty-btn" 
+                      <button
+                        className="qty-btn"
                         onClick={() => handleQuantityChange(item.id, item.quantity - 1)}
                         title="Disminuir cantidad"
                       >
-                        −
+                        -
                       </button>
                       <span className="product-qty">{item.quantity}</span>
-                      <button 
-                        className="qty-btn" 
+                      <button
+                        className="qty-btn"
                         onClick={() => handleQuantityChange(item.id, item.quantity + 1)}
                         title="Aumentar cantidad"
                       >
@@ -115,7 +142,7 @@ export default function CheckoutModal({ isOpen, onClose, user }) {
                       onClick={() => handleRemoveItem(item.id)}
                       title="Eliminar producto"
                     >
-                      🗑️
+                      Eliminar
                     </button>
                   </div>
                   <div className="product-price">{(item.totalPrice || item.price * item.quantity).toFixed(2)}€</div>
@@ -124,7 +151,6 @@ export default function CheckoutModal({ isOpen, onClose, user }) {
             </div>
           </section>
 
-          {/* Resumen Final */}
           <section className="checkout-summary">
             <div className="summary-row">
               <span>Subtotal:</span>
@@ -138,8 +164,8 @@ export default function CheckoutModal({ isOpen, onClose, user }) {
         </div>
 
         <div className="checkout-footer">
-          <button 
-            className="checkout-btn" 
+          <button
+            className="checkout-btn"
             onClick={handleCheckout}
             disabled={isProcessing || cartItems.length === 0}
           >
