@@ -196,6 +196,12 @@ export function registerOrderRoutes(app, deps) {
         });
       }
 
+      if (!stripe) {
+        return res.status(503).json({
+          error: 'Stripe no está configurado en el backend. Define STRIPE_SECRET_KEY o activa DEV_BYPASS_STRIPE_PAYMENT en desarrollo.',
+        });
+      }
+
       const line_items = validatedOrder.items.map((item) => ({
         price_data: {
           currency: 'eur',

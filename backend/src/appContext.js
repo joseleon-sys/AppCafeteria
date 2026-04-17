@@ -600,9 +600,18 @@ export function createAppContext() {
     port: parseInt(process.env.POSTGRES_PORT || '5433', 10),
     database: process.env.POSTGRES_DB || 'cafeteria_db',
   });
-  const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
   const productStore = createProductStore();
   const developmentPaymentBypassEnabled = isDevelopmentPaymentBypassEnabled();
+  const stripeSecretKey = (process.env.STRIPE_SECRET_KEY || '').trim();
+
+  if (!stripeSecretKey) {
+    if (isProduction && !developmentPaymentBypassEnabled) {
+      throw new Error('STRIPE_SECRET_KEY es obligatorio cuando Stripe esta habilitado');
+    }
+    console.warn('STRIPE_SECRET_KEY no configurado. Stripe quedara deshabilitado hasta definir la clave.');
+  }
+
+  const stripe = stripeSecretKey ? new Stripe(stripeSecretKey) : null;
 
   pool.on('error', (err) => {
     console.error('Error en pool:', err);
