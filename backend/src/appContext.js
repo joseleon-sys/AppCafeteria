@@ -6,7 +6,6 @@ import { randomBytes } from 'crypto';
 import { createClient } from '@supabase/supabase-js';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import pkg from 'pg';
 import Stripe from 'stripe';
 import {
   loginRateLimiter,
@@ -30,8 +29,6 @@ import {
 } from './services/notificationService.js';
 import { Sentry, captureServerResponse, initSentry, isSentryEnabled } from './observability/sentry.js';
 import { createHttpLogger } from './observability/httpLogger.js';
-
-const { Pool } = pkg;
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -358,16 +355,6 @@ function isValidSpecialCode(code) {
   return code === 'ayuda';
 }
 
-function isLocalDatabaseUnavailable(error) {
-  const message = String(error?.message || '').toLowerCase();
-  return (
-    error?.code === 'ECONNREFUSED' ||
-    error?.code === 'EPERM' ||
-    message.includes('connect econnrefused') ||
-    message.includes('connect eperm')
-  );
-}
-
 function buildLineItemNotes(item = {}) {
   const noteParts = [];
   if (item.notes) noteParts.push(String(item.notes).trim());
@@ -611,18 +598,10 @@ export function createAppContext() {
   ).trim();
 
   if (!supabaseUrl || !supabaseServerKey) {
-    console.warn('Variables de Supabase incompletas. Usando PostgreSQL local o datos mock.');
+    throw new Error('SUPABASE_URL y SUPABASE_SECRET_KEY/SUPABASE_SERVICE_ROLE_KEY son obligatorios');
   }
 
-  const supabase = supabaseUrl && supabaseServerKey ? createClient(supabaseUrl, supabaseServerKey) : null;
-  const pool = new Pool({
-    user: process.env.POSTGRES_USER || 'cafeteria_user',
-    password: process.env.POSTGRES_PASSWORD || 'cafeteria_pass',
-    host: process.env.POSTGRES_HOST || '127.0.0.1',
-    port: parseInt(process.env.POSTGRES_PORT || '5433', 10),
-    database: process.env.POSTGRES_DB || 'cafeteria_db',
-  });
-  const productStore = createProductStore();
+  const supabase = createClient(supabaseUrl, supabaseServerKey);
   const bypassRequestedInDisabledEnvironment = (isProduction || isHosted) && parseBooleanValue(process.env.DEV_BYPASS_STRIPE_PAYMENT, false);
   const developmentPaymentBypassEnabled = isDevelopmentPaymentBypassEnabled({ isProduction, isHosted });
   const stripeSecretKey = (process.env.STRIPE_SECRET_KEY || '').trim();
@@ -640,9 +619,7 @@ export function createAppContext() {
 
   const stripe = stripeSecretKey ? new Stripe(stripeSecretKey) : null;
 
-  pool.on('error', (err) => {
-    console.error('Error en pool:', err);
-  });
+  console.log('Supabase configurado. Se usara como unico origen de datos.');
 
   app.use(cors());
   app.use(express.json());
@@ -691,143 +668,153 @@ export function createAppContext() {
     }
   }
 
-  async function ensureLocalProductSchema() {
-    const alterStatements = [
-      "ALTER TABLE productos_menu ADD COLUMN IF NOT EXISTS category TEXT DEFAULT 'cafes'",
-      "ALTER TABLE productos_menu ADD COLUMN IF NOT EXISTS description TEXT DEFAULT ''",
-      'ALTER TABLE productos_menu ADD COLUMN IF NOT EXISTS image_url TEXT',
-      "ALTER TABLE productos_menu ADD COLUMN IF NOT EXISTS badges JSONB DEFAULT '[]'::jsonb",
-      "ALTER TABLE productos_menu ADD COLUMN IF NOT EXISTS options JSONB DEFAULT '{}'::jsonb",
-      "ALTER TABLE productos_menu ADD COLUMN IF NOT EXISTS ingredients JSONB DEFAULT '[]'::jsonb",
-      "ALTER TABLE productos_menu ADD COLUMN IF NOT EXISTS contains_info TEXT DEFAULT ''",
-      "ALTER TABLE productos_menu ADD COLUMN IF NOT EXISTS conservation TEXT DEFAULT 'Conservar refrigerado entre 0ºC y 4ºC'",
-      'ALTER TABLE productos_menu ADD COLUMN IF NOT EXISTS shelf_life_hours INT DEFAULT 24',
-      'ALTER TABLE productos_menu ADD COLUMN IF NOT EXISTS calories_kcal INT DEFAULT 0',
-      "ALTER TABLE productos_menu ADD COLUMN IF NOT EXISTS nutrition_table JSONB DEFAULT '{}'::jsonb",
-      'ALTER TABLE productos_menu ADD COLUMN IF NOT EXISTS sanitary_approved BOOLEAN DEFAULT true',
-      "ALTER TABLE productos_menu ADD COLUMN IF NOT EXISTS sanitary_notes TEXT DEFAULT ''",
-      'ALTER TABLE productos_menu ADD COLUMN IF NOT EXISTS approved_at TIMESTAMP',
-    ];
-
-    for (const statement of alterStatements) {
-      await pool.query(statement);
-    }
-
-    await pool.query(`
-      UPDATE productos_menu
-      SET
-        badges = COALESCE(badges, '[]'::jsonb),
-        alergenos = COALESCE(alergenos, '[]'::jsonb),
-        options = COALESCE(options, '{}'::jsonb),
-        ingredients = COALESCE(ingredients, '[]'::jsonb),
-        contains_info = COALESCE(contains_info, ''),
-        conservation = COALESCE(conservation, 'Conservar refrigerado entre 0ºC y 4ºC'),
-        shelf_life_hours = COALESCE(shelf_life_hours, 24),
-        calories_kcal = COALESCE(calories_kcal, 0),
-        nutrition_table = COALESCE(nutrition_table, '{}'::jsonb),
-        sanitary_approved = COALESCE(sanitary_approved, true),
-        sanitary_notes = COALESCE(sanitary_notes, '')
-    `);
-  }
-
-  async function ensureLocalUserSchema() {
-    await pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS alias VARCHAR(30)');
-    await pool.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS favoritos TEXT[] DEFAULT '{}'::TEXT[]");
-    await pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS special_code VARCHAR(50)');
-    await pool.query(`
-      ALTER TABLE users
-      ALTER COLUMN favoritos TYPE TEXT[]
-      USING (
-        CASE
-          WHEN favoritos IS NULL THEN '{}'::TEXT[]
-          ELSE ARRAY(SELECT item::TEXT FROM unnest(favoritos) AS item)
-        END
-      )
-    `);
-    await pool.query("ALTER TABLE users ALTER COLUMN favoritos SET DEFAULT '{}'::TEXT[]");
-  }
-
   async function getUserSpecialMode(userId) {
     if (!userId) return { enabled: false, code: null };
     try {
-      if (supabase) {
-        const { data, error } = await supabase
-          .from('users')
-          .select('is_adult, special_code')
-          .eq('id', userId)
-          .single();
+      const { data, error } = await supabase
+        .from('users')
+        .select('is_adult, special_code')
+        .eq('id', userId)
+        .single();
 
-        if (error) {
-          if (error.message?.toLowerCase().includes('special_code')) return { enabled: false, code: null };
-          throw error;
-        }
-
-        const code = normalizeSpecialCode(data?.special_code);
-        return { enabled: Boolean(data?.is_adult && code === 'ayuda'), code };
+      if (error) {
+        if (error.message?.toLowerCase().includes('special_code')) return { enabled: false, code: null };
+        throw error;
       }
 
-      const result = await pool.query('SELECT is_adult, special_code FROM users WHERE id = $1 LIMIT 1', [userId]);
-      const row = result.rows[0];
-      const code = normalizeSpecialCode(row?.special_code);
-      return { enabled: Boolean(row?.is_adult && code === 'ayuda'), code };
+      const code = normalizeSpecialCode(data?.special_code);
+      return { enabled: Boolean(data?.is_adult && code === 'ayuda'), code };
     } catch (error) {
       console.error('Error al comprobar el modo especial del usuario:', error);
       return { enabled: false, code: null };
     }
   }
 
+  async function findAuthUserByEmail(email) {
+    const normalizedEmail = String(email || '').trim().toLowerCase();
+    if (!normalizedEmail) return null;
+
+    const perPage = 200;
+    for (let page = 1; page <= 25; page += 1) {
+      const { data, error } = await supabase.auth.admin.listUsers({ page, perPage });
+      if (error) throw error;
+
+      const users = Array.isArray(data?.users) ? data.users : [];
+      const match = users.find((user) => String(user?.email || '').trim().toLowerCase() === normalizedEmail);
+      if (match) return match;
+      if (users.length < perPage) break;
+    }
+
+    return null;
+  }
+
+  async function ensureProfileForAppUser(appUser, options = {}) {
+    if (!supabase) {
+      const error = new Error('Supabase no esta configurado en el backend');
+      error.statusCode = 503;
+      throw error;
+    }
+
+    if (!appUser?.email) {
+      const error = new Error('No se puede resolver el perfil del usuario sin email');
+      error.statusCode = 400;
+      throw error;
+    }
+
+    let authUser = await findAuthUserByEmail(appUser.email);
+
+    if (!authUser) {
+      const generatedPassword = options.password || randomBytes(24).toString('hex');
+      const { data, error } = await supabase.auth.admin.createUser({
+        email: appUser.email,
+        password: generatedPassword,
+        email_confirm: true,
+        user_metadata: {
+          legacy_user_id: appUser.id ?? null,
+          role: appUser.role ?? null,
+          is_adult: Boolean(appUser.is_adult),
+          full_name: appUser.nombre || null,
+        },
+      });
+
+      if (error) {
+        const maybeExistingUser = await findAuthUserByEmail(appUser.email);
+        if (!maybeExistingUser) throw error;
+        authUser = maybeExistingUser;
+      } else {
+        authUser = data?.user || null;
+      }
+    }
+
+    if (!authUser?.id) {
+      const error = new Error('No se pudo resolver el usuario auth de Supabase');
+      error.statusCode = 500;
+      throw error;
+    }
+
+    const { error: profileError } = await supabase
+      .from('perfiles')
+      .upsert({
+        id: authUser.id,
+        nombre_completo: appUser.nombre || null,
+      }, { onConflict: 'id' });
+
+    if (profileError) throw profileError;
+    return authUser.id;
+  }
+
+  async function resolveProfileIdForUser(userLike, options = {}) {
+    if (!supabase || !userLike) return null;
+
+    if (isUuidLike(userLike.profileId)) return String(userLike.profileId);
+    if (isUuidLike(userLike.id) && !userLike.email) return String(userLike.id);
+
+    let appUser = null;
+    if (userLike.email) {
+      const { data, error } = await supabase
+        .from('users')
+        .select('id, email, nombre, role, is_adult')
+        .eq('email', userLike.email)
+        .maybeSingle();
+
+      if (error) throw error;
+      appUser = data;
+    } else if (userLike.id !== undefined && userLike.id !== null) {
+      const { data, error } = await supabase
+        .from('users')
+        .select('id, email, nombre, role, is_adult')
+        .eq('id', userLike.id)
+        .maybeSingle();
+
+      if (error) throw error;
+      appUser = data;
+    }
+
+    if (!appUser) return null;
+    return ensureProfileForAppUser(appUser, options);
+  }
+
   async function getActiveProductSummary() {
-    if (supabase) {
-      try {
-        const { data, count, error } = await supabase
-          .from('productos_menu')
-          .select('id', { count: 'exact' })
-          .eq('activo', true);
+    const { data, count, error } = await supabase
+      .from('productos_menu')
+      .select('id', { count: 'exact' })
+      .eq('activo', true);
 
-        if (!error) {
-          return {
-            source: 'Supabase',
-            count: Number.isFinite(count) ? count : (Array.isArray(data) ? data.length : 0),
-          };
-        }
-      } catch (error) {
-        console.warn('No se pudo contar productos en Supabase:', error?.message || String(error));
-      }
-    }
+    if (error) throw error;
 
-    try {
-      const result = await pool.query('SELECT COUNT(*) AS count FROM productos_menu WHERE activo = true AND sanitary_approved = true');
-      return { source: 'PostgreSQL local', count: Number.parseInt(result.rows[0]?.count, 10) || 0 };
-    } catch (error) {
-      if (!isLocalDatabaseUnavailable(error)) {
-        console.warn('No se pudo contar productos en PostgreSQL local:', error?.message || String(error));
-      }
-    }
-
-    return { source: 'fallback en memoria', count: productStore.list().filter((product) => product.active).length };
+    return {
+      source: 'Supabase',
+      count: Number.isFinite(count) ? count : (Array.isArray(data) ? data.length : 0),
+    };
   }
 
   async function findCatalogProductById(productId) {
     const normalizedId = String(productId || '').trim();
     if (!normalizedId) return null;
 
-    try {
-      const result = await pool.query('SELECT * FROM productos_menu WHERE id = $1 LIMIT 1', [normalizedId]);
-      if (result.rows.length > 0) return normalizeProductFromPg(result.rows[0]);
-    } catch (error) {
-      console.warn('No se pudo consultar producto en PostgreSQL local:', error?.message || String(error));
-    }
-
-    if (supabase) {
-      try {
-        const { data, error } = await supabase.from('productos_menu').select('*').eq('id', normalizedId).single();
-        if (!error && data) return transformProducto(data);
-      } catch (error) {
-        console.warn('No se pudo consultar producto en Supabase:', error?.message || String(error));
-      }
-    }
-
-    return productStore.findById(normalizedId);
+    const { data, error } = await supabase.from('productos_menu').select('*').eq('id', normalizedId).single();
+    if (error || !data) return null;
+    return transformProducto(data);
   }
 
   async function validateOrderItems(items = [], options = {}) {
@@ -885,23 +872,6 @@ export function createAppContext() {
   }
 
   async function startServer() {
-    if (supabase) {
-      console.log('Supabase configurado. Se priorizara como origen principal de datos.');
-    }
-
-    try {
-      await ensureLocalUserSchema();
-      console.log('Esquema local de usuarios verificado');
-      await ensureLocalProductSchema();
-      console.log('Esquema local de ficha tecnica verificado');
-    } catch (error) {
-      if (isLocalDatabaseUnavailable(error) && supabase) {
-        console.log('PostgreSQL local no disponible. El servidor continuara usando Supabase.');
-      } else {
-        console.warn('No se pudo inicializar el esquema local. Se continua con fallback. Detalle:', error?.message || String(error));
-      }
-    }
-
     app.listen(PORT, async () => {
       console.log(`Servidor corriendo en http://localhost:${PORT}`);
       const productSummary = await getActiveProductSummary();
@@ -914,19 +884,17 @@ export function createAppContext() {
     PORT,
     JWT_SECRET,
     supabase,
-    pool,
     stripe,
     developmentPaymentBypassEnabled,
-    productStore,
     authenticateToken,
     requireAdmin,
     isParentCapableUser,
     notifyUserSafely,
-    ensureLocalUserSchema,
-    ensureLocalProductSchema,
     getActiveProductSummary,
     findCatalogProductById,
     validateOrderItems,
+    ensureProfileForAppUser,
+    resolveProfileIdForUser,
     startServer,
     loginRateLimiter,
     registrationRateLimiter,
@@ -951,7 +919,6 @@ export function createAppContext() {
     normalizeProductFromPg,
     normalizeSpecialCode,
     isValidSpecialCode,
-    isLocalDatabaseUnavailable,
     buildLineItemNotes,
     buildOrderQueueEntry,
     generateParentToken,

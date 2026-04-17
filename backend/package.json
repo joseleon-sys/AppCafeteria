@@ -12,7 +12,7 @@
   "keywords": [
     "cafeteria",
     "api",
-    "postgres"
+    "supabase"
   ],
   "author": "",
   "license": "MIT",
@@ -25,7 +25,6 @@
     "express": "^4.18.2",
     "firebase-admin": "^13.5.0",
     "jsonwebtoken": "^9.0.2",
-    "pg": "^8.11.3",
     "pino-http": "^11.0.0",
     "stripe": "^22.0.1"
   },

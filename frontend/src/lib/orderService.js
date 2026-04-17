@@ -8,8 +8,6 @@ import {
   getOrderHistory,
 } from './api';
 
-const DEV_BYPASS_ORDERS_STORAGE_KEY = 'cafeteria_dev_bypass_orders';
-
 function normalizeCurrency(value) {
   return Number.parseFloat(value || 0) || 0;
 }
@@ -142,30 +140,6 @@ function extractOrders(response) {
   return [];
 }
 
-function readStoredDevBypassOrders() {
-  if (typeof window === 'undefined') return [];
-
-  try {
-    const raw = window.localStorage.getItem(DEV_BYPASS_ORDERS_STORAGE_KEY);
-    const parsed = raw ? JSON.parse(raw) : [];
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
-}
-
-function writeStoredDevBypassOrders(orders) {
-  if (typeof window === 'undefined') return;
-  window.localStorage.setItem(DEV_BYPASS_ORDERS_STORAGE_KEY, JSON.stringify(orders));
-}
-
-export function storeDevBypassOrder(order) {
-  if (!order?.id) return;
-
-  const existing = readStoredDevBypassOrders().filter((entry) => String(entry.id) !== String(order.id));
-  writeStoredDevBypassOrders([order, ...existing].slice(0, 20));
-}
-
 export async function fetchOrderHistoryForUser(user) {
   if (!user) return [];
 
@@ -207,18 +181,7 @@ export async function fetchOrderHistoryForUser(user) {
   }
 
   const response = await getMyOrders();
-  const apiOrders = extractOrders(response).map((order) => normalizeHistoryEntry(order, 'standard'));
-  const localDevOrders = readStoredDevBypassOrders()
-    .filter((order) => String(order.user_id) === String(user.userId || user.id))
-    .map((order) => normalizeHistoryEntry(order, 'standard'));
-
-  const seen = new Set();
-  return [...localDevOrders, ...apiOrders].filter((order) => {
-    const key = String(order.id);
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
+  return extractOrders(response).map((order) => normalizeHistoryEntry(order, 'standard'));
 }
 
 export async function fetchOrderDetailForUser(user, historyEntry) {
@@ -232,16 +195,8 @@ export async function fetchOrderDetailForUser(user, historyEntry) {
   }
 
   if (historyEntry.source === 'standard') {
-    try {
-      const response = await getOrder(historyEntry.id);
-      return normalizeHistoryEntry(response?.order, 'standard');
-    } catch (error) {
-      const localOrder = readStoredDevBypassOrders().find((order) => String(order.id) === String(historyEntry.id));
-      if (localOrder) {
-        return normalizeHistoryEntry(localOrder, 'standard');
-      }
-      throw error;
-    }
+    const response = await getOrder(historyEntry.id);
+    return normalizeHistoryEntry(response?.order, 'standard');
   }
 
   return normalizeHistoryEntry(historyEntry, historyEntry.source || 'parent');

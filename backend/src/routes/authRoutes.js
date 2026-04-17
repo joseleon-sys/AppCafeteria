@@ -5,7 +5,6 @@ import { resetUserPassword } from '../services/passwordResetService.js';
 export function registerAuthRoutes(app, deps) {
   const {
     supabase,
-    pool,
     JWT_SECRET,
     authenticateToken,
     registrationRateLimiter,
@@ -20,10 +19,11 @@ export function registerAuthRoutes(app, deps) {
     markNotificationAsRead,
     normalizeSpecialCode,
     normalizeFavoriteIds,
-    serializeFavoriteIdsForDatabase,
     parsePositiveInteger,
     formatFullName,
     calculateAge,
+    ensureProfileForAppUser,
+    resolveProfileIdForUser,
     generateParentToken,
     isValidFullName,
     normalizeAlias,
@@ -31,7 +31,13 @@ export function registerAuthRoutes(app, deps) {
     isValidSpecialCode,
   } = deps;
 
+  function requireSupabase(res) {
+    return res.status(503).json({ error: 'Supabase no esta configurado en el backend' });
+  }
+
   app.post('/api/auth/register', registrationRateLimiter, async (req, res) => {
+    if (!supabase) return requireSupabase(res);
+
     try {
       const { email, password, name, birthDate } = req.body;
       const formattedName = formatFullName(name);
@@ -72,62 +78,38 @@ export function registerAuthRoutes(app, deps) {
       const parentToken = isAdult ? generateParentToken() : null;
       const passwordHash = await bcrypt.hash(password, 10);
 
-      let userData = null;
+      const { data: userData, error } = await supabase
+        .from('users')
+        .insert([{
+          email,
+          password_hash: passwordHash,
+          nombre: formattedName,
+          birth_date: birthDate,
+          is_adult: isAdult,
+          role,
+          parent_token: parentToken,
+        }])
+        .select()
+        .single();
 
-      if (supabase) {
-        const { data, error } = await supabase
-          .from('users')
-          .insert([{
-            email,
-            password_hash: passwordHash,
-            nombre: formattedName,
-            birth_date: birthDate,
-            is_adult: isAdult,
-            role,
-            parent_token: parentToken,
-          }])
-          .select()
-          .single();
-
-        if (error) {
-          if (error.code === '23505') {
-            await logSecurityEvent(supabase, {
-              actionType: 'registration_duplicate_email',
-              severity: 'medium',
-              details: { email },
-              req,
-            });
-            return res.status(400).json({ error: 'El email ya está registrado' });
-          }
-          throw error;
+      if (error) {
+        if (error.code === '23505') {
+          await logSecurityEvent(supabase, {
+            actionType: 'registration_duplicate_email',
+            severity: 'medium',
+            details: { email },
+            req,
+          });
+          return res.status(400).json({ error: 'El email ya está registrado' });
         }
-        userData = data;
-      } else {
-        try {
-          const result = await pool.query(
-            `INSERT INTO users (email, password_hash, nombre, birth_date, is_adult, role, parent_token)
-             VALUES ($1, $2, $3, $4, $5, $6, $7)
-             RETURNING *`,
-            [email, passwordHash, formattedName, birthDate, isAdult, role, parentToken],
-          );
-          userData = result.rows[0];
-        } catch (err) {
-          if (err.code === '23505') {
-            await logSecurityEvent(supabase, {
-              actionType: 'registration_duplicate_email',
-              severity: 'medium',
-              details: { email },
-              req,
-            });
-            return res.status(400).json({ error: 'El email ya está registrado' });
-          }
-          throw err;
-        }
+        throw error;
       }
 
       if (!userData) {
         return res.status(500).json({ error: 'Error al crear usuario' });
       }
+
+      const profileId = await ensureProfileForAppUser(userData, { password });
 
       await logSecurityEvent(supabase, {
         userId: userData.id,
@@ -138,7 +120,7 @@ export function registerAuthRoutes(app, deps) {
       });
 
       const token = jwt.sign(
-        { id: userData.id, email: userData.email, role: userData.role },
+        { id: userData.id, email: userData.email, role: userData.role, isAdult: Boolean(userData.is_adult), profileId },
         JWT_SECRET,
         { expiresIn: '7d' },
       );
@@ -151,6 +133,7 @@ export function registerAuthRoutes(app, deps) {
           email: userData.email,
           name: userData.nombre || userData.name,
           alias: userData.alias || null,
+          profileId,
           role: userData.role,
           isAdult: userData.is_adult,
           parentToken: userData.parent_token,
@@ -171,6 +154,8 @@ export function registerAuthRoutes(app, deps) {
   });
 
   app.post('/api/auth/login', loginRateLimiter, async (req, res) => {
+    if (!supabase) return requireSupabase(res);
+
     try {
       const { email, password } = req.body;
       const clientIP = getClientIP(req);
@@ -179,88 +164,15 @@ export function registerAuthRoutes(app, deps) {
         return res.status(400).json({ error: 'Email y contraseña requeridos' });
       }
 
-      if (email === 'demo@demo.com' && password === 'demo') {
-        resetLoginAttempts(clientIP);
-        const token = jwt.sign(
-          { id: 999, email: 'demo@demo.com', role: 'customer', isAdult: true },
-          JWT_SECRET,
-          { expiresIn: '7d' },
-        );
+      const { data: user, error } = await supabase
+        .from('users')
+        .select('*')
+        .eq('email', email)
+        .eq('active', true)
+        .single();
 
-        await logSecurityEvent(supabase, {
-          userId: 999,
-          actionType: 'login_demo',
-          severity: 'low',
-          details: { email },
-          req,
-        });
-
-        return res.json({
-          token,
-          user: {
-            id: 999,
-            email: 'demo@demo.com',
-            name: 'Usuario Demo',
-            alias: null,
-            role: 'customer',
-            isAdult: true,
-            parentToken: null,
-            specialCode: null,
-            created_at: null,
-          },
-        });
-      }
-
-      if ((email === 'admin@admin' || email === 'admin@admin.com') && password === 'admin') {
-        resetLoginAttempts(clientIP);
-        const token = jwt.sign(
-          { id: 1, email, role: 'admin', isAdult: true },
-          JWT_SECRET,
-          { expiresIn: '7d' },
-        );
-
-        await logSecurityEvent(supabase, {
-          userId: 1,
-          actionType: 'login_admin',
-          severity: 'low',
-          details: { email },
-          req,
-        });
-
-        return res.json({
-          token,
-          user: {
-            id: 1,
-            email,
-            name: 'Administrador',
-            alias: null,
-            role: 'admin',
-            isAdult: true,
-            parentToken: null,
-            specialCode: null,
-            created_at: null,
-          },
-        });
-      }
-
-      let user = null;
-
-      if (supabase) {
-        const { data, error } = await supabase
-          .from('users')
-          .select('*')
-          .eq('email', email)
-          .eq('active', true)
-          .single();
-
-        if (!error && data) user = data;
-      } else {
-        try {
-          const result = await pool.query('SELECT * FROM users WHERE email = $1 AND active = true', [email]);
-          if (result.rows.length > 0) user = result.rows[0];
-        } catch (err) {
-          console.error('Error consultando PostgreSQL local:', err);
-        }
+      if (error && error.code !== 'PGRST116') {
+        throw error;
       }
 
       if (!user) {
@@ -287,11 +199,9 @@ export function registerAuthRoutes(app, deps) {
 
       resetLoginAttempts(clientIP);
 
-      if (supabase) {
-        await supabase.from('users').update({ last_login: new Date().toISOString() }).eq('id', user.id);
-      } else {
-        await pool.query('UPDATE users SET last_login = NOW() WHERE id = $1', [user.id]);
-      }
+      await supabase.from('users').update({ last_login: new Date().toISOString() }).eq('id', user.id);
+
+      const profileId = await ensureProfileForAppUser(user, { password });
 
       await logSecurityEvent(supabase, {
         userId: user.id,
@@ -302,12 +212,12 @@ export function registerAuthRoutes(app, deps) {
       });
 
       const token = jwt.sign(
-        { id: user.id, email: user.email, role: user.role, isAdult: Boolean(user.is_adult) },
+        { id: user.id, email: user.email, role: user.role, isAdult: Boolean(user.is_adult), profileId },
         JWT_SECRET,
         { expiresIn: '7d' },
       );
 
-      const trustScore = supabase ? await calculateTrustScore(supabase, user.id) : 100;
+      const trustScore = await calculateTrustScore(supabase, user.id, { profileId });
 
       return res.json({
         token,
@@ -316,6 +226,7 @@ export function registerAuthRoutes(app, deps) {
           email: user.email,
           name: user.nombre || user.name,
           alias: user.alias || null,
+          profileId,
           role: user.role,
           isAdult: user.is_adult,
           parentToken: user.parent_token,
@@ -338,6 +249,8 @@ export function registerAuthRoutes(app, deps) {
   });
 
   app.post('/api/auth/reset-password', async (req, res) => {
+    if (!supabase) return requireSupabase(res);
+
     try {
       const { email, birthDate, newPassword } = req.body;
       const resetResult = await resetUserPassword({
@@ -345,7 +258,6 @@ export function registerAuthRoutes(app, deps) {
         birthDate,
         newPassword,
         supabase,
-        pool,
       });
 
       await logSecurityEvent(supabase, {
@@ -375,49 +287,20 @@ export function registerAuthRoutes(app, deps) {
   });
 
   app.get('/api/auth/me', authenticateToken, async (req, res) => {
+    if (!supabase) return requireSupabase(res);
+
     try {
-      if (!supabase) {
-        const result = await pool.query(
-          'SELECT id, email, nombre AS name, alias, role, is_adult, parent_token, special_code, favoritos, verified_email, verified_phone, created_at FROM users WHERE id = $1 LIMIT 1',
-          [req.user.id],
-        );
-
-        if (result.rows.length > 0) {
-          const user = result.rows[0];
-          return res.json({
-            user: {
-              id: user.id,
-              email: user.email,
-              name: user.name,
-              alias: user.alias || null,
-              role: user.role,
-              isAdult: user.is_adult,
-              parentToken: user.parent_token,
-              specialCode: normalizeSpecialCode(user.special_code),
-              favorites: normalizeFavoriteIds(user.favoritos),
-              verified_email: user.verified_email,
-              verified_phone: user.verified_phone,
-              created_at: user.created_at || null,
-            },
-          });
-        }
-
-        return res.json({
-          user: {
-            id: req.user.id,
-            email: req.user.email,
-            role: req.user.role,
-            favorites: [],
-            created_at: null,
-          },
-        });
-      }
-
       const { data: user, error } = await supabase.from('users').select('*').eq('id', req.user.id).single();
 
       if (error || !user) {
         return res.status(404).json({ error: 'Usuario no encontrado' });
       }
+
+      const profileId = await resolveProfileIdForUser({
+        id: user.id,
+        email: user.email,
+        profileId: req.user.profileId,
+      });
 
       return res.json({
         user: {
@@ -425,6 +308,7 @@ export function registerAuthRoutes(app, deps) {
           email: user.email,
           name: user.nombre || user.name,
           alias: user.alias || null,
+          profileId,
           role: user.role,
           isAdult: user.is_adult,
           parentToken: user.parent_token,
@@ -508,21 +392,17 @@ export function registerAuthRoutes(app, deps) {
   });
 
   app.get('/api/auth/favorites', authenticateToken, async (req, res) => {
-    try {
-      if (supabase) {
-        const { data, error } = await supabase.from('users').select('favoritos').eq('id', req.user.id).single();
-        if (error) {
-          if (error.message?.toLowerCase().includes('favoritos')) {
-            return res.status(400).json({ error: 'Falta la columna favoritos en Supabase. Ejecuta el SQL actualizado.' });
-          }
-          throw error;
-        }
-        return res.json({ favorites: normalizeFavoriteIds(data?.favoritos) });
-      }
+    if (!supabase) return requireSupabase(res);
 
-      const result = await pool.query('SELECT favoritos FROM users WHERE id = $1 LIMIT 1', [req.user.id]);
-      if (result.rows.length === 0) return res.status(404).json({ error: 'Usuario no encontrado' });
-      return res.json({ favorites: normalizeFavoriteIds(result.rows[0].favoritos) });
+    try {
+      const { data, error } = await supabase.from('users').select('favoritos').eq('id', req.user.id).single();
+      if (error) {
+        if (error.message?.toLowerCase().includes('favoritos')) {
+          return res.status(400).json({ error: 'Falta la columna favoritos en Supabase. Ejecuta el SQL actualizado.' });
+        }
+        throw error;
+      }
+      return res.json({ favorites: normalizeFavoriteIds(data?.favoritos) });
     } catch (error) {
       console.error('Error al obtener favoritos:', error);
       return res.status(500).json({ error: 'Error al obtener favoritos' });
@@ -530,42 +410,28 @@ export function registerAuthRoutes(app, deps) {
   });
 
   app.put('/api/auth/favorites', authenticateToken, async (req, res) => {
+    if (!supabase) return requireSupabase(res);
+
     try {
       const favoriteIds = normalizeFavoriteIds(req.body?.favoriteIds);
 
-      if (supabase) {
-        const { data, error } = await supabase
-          .from('users')
-          .update({ favoritos: favoriteIds })
-          .eq('id', req.user.id)
-          .select('id, favoritos')
-          .single();
+      const { data, error } = await supabase
+        .from('users')
+        .update({ favoritos: favoriteIds })
+        .eq('id', req.user.id)
+        .select('id, favoritos')
+        .single();
 
-        if (error) {
-          if (error.message?.toLowerCase().includes('favoritos')) {
-            return res.status(400).json({ error: 'Falta la columna favoritos en Supabase. Ejecuta el SQL actualizado.' });
-          }
-          throw error;
+      if (error) {
+        if (error.message?.toLowerCase().includes('favoritos')) {
+          return res.status(400).json({ error: 'Falta la columna favoritos en Supabase. Ejecuta el SQL actualizado.' });
         }
-
-        return res.json({
-          message: 'Favoritos actualizados correctamente',
-          favorites: normalizeFavoriteIds(data?.favoritos),
-        });
+        throw error;
       }
 
-      const result = await pool.query(
-        `UPDATE users
-         SET favoritos = $1
-         WHERE id = $2
-         RETURNING id, favoritos`,
-        [serializeFavoriteIdsForDatabase(favoriteIds), req.user.id],
-      );
-
-      if (result.rows.length === 0) return res.status(404).json({ error: 'Usuario no encontrado' });
       return res.json({
         message: 'Favoritos actualizados correctamente',
-        favorites: normalizeFavoriteIds(result.rows[0].favoritos),
+        favorites: normalizeFavoriteIds(data?.favoritos),
       });
     } catch (error) {
       console.error('Error al actualizar favoritos:', error);
@@ -574,6 +440,8 @@ export function registerAuthRoutes(app, deps) {
   });
 
   app.put('/api/auth/profile', authenticateToken, async (req, res) => {
+    if (!supabase) return requireSupabase(res);
+
     try {
       const userId = req.user.id;
       const alias = normalizeAlias(req.body?.alias);
@@ -590,26 +458,21 @@ export function registerAuthRoutes(app, deps) {
       let currentUser = null;
       let missingSpecialCodeColumn = false;
 
-      if (supabase) {
-        let { data, error } = await supabase
-          .from('users')
-          .select('id, is_adult, special_code')
-          .eq('id', userId)
-          .single();
+      let { data, error } = await supabase
+        .from('users')
+        .select('id, is_adult, special_code')
+        .eq('id', userId)
+        .single();
 
-        if (error && error.message?.toLowerCase().includes('special_code')) {
-          missingSpecialCodeColumn = true;
-          const fallbackResponse = await supabase.from('users').select('id, is_adult').eq('id', userId).single();
-          data = fallbackResponse.data;
-          error = fallbackResponse.error;
-        }
-
-        if (error) throw error;
-        currentUser = { ...data, special_code: missingSpecialCodeColumn ? null : data?.special_code };
-      } else {
-        const result = await pool.query('SELECT id, is_adult, special_code FROM users WHERE id = $1 LIMIT 1', [userId]);
-        currentUser = result.rows[0] || null;
+      if (error && error.message?.toLowerCase().includes('special_code')) {
+        missingSpecialCodeColumn = true;
+        const fallbackResponse = await supabase.from('users').select('id, is_adult').eq('id', userId).single();
+        data = fallbackResponse.data;
+        error = fallbackResponse.error;
       }
+
+      if (error) throw error;
+      currentUser = { ...data, special_code: missingSpecialCodeColumn ? null : data?.special_code };
 
       if (!currentUser) return res.status(404).json({ error: 'Usuario no encontrado' });
       if (!currentUser.is_adult && specialCode !== null) {
@@ -621,48 +484,30 @@ export function registerAuthRoutes(app, deps) {
         ? null
         : (currentUser.is_adult ? specialCode : null);
 
-      let updatedUser = null;
+      if (missingSpecialCodeColumn && nextSpecialCode !== null) {
+        return res.status(400).json({ error: 'Falta la columna special_code en Supabase. Ejecuta el script SQL actualizado.' });
+      }
 
-      if (supabase) {
-        if (missingSpecialCodeColumn && nextSpecialCode !== null) {
+      const updatePayload = missingSpecialCodeColumn ? { alias } : { alias, special_code: nextSpecialCode };
+      const selectFields = missingSpecialCodeColumn
+        ? 'id, email, nombre, alias, role, is_adult, parent_token'
+        : 'id, email, nombre, alias, role, is_adult, parent_token, special_code';
+
+      const { data: updatedUser, error: updateError } = await supabase
+        .from('users')
+        .update(updatePayload)
+        .eq('id', userId)
+        .select(selectFields)
+        .single();
+
+      if (updateError) {
+        if (updateError.message?.toLowerCase().includes('alias')) {
+          return res.status(400).json({ error: 'Falta la columna alias en Supabase. Ejecuta el script SQL actualizado.' });
+        }
+        if (updateError.message?.toLowerCase().includes('special_code')) {
           return res.status(400).json({ error: 'Falta la columna special_code en Supabase. Ejecuta el script SQL actualizado.' });
         }
-
-        const updatePayload = missingSpecialCodeColumn ? { alias } : { alias, special_code: nextSpecialCode };
-        const selectFields = missingSpecialCodeColumn
-          ? 'id, email, nombre, alias, role, is_adult, parent_token'
-          : 'id, email, nombre, alias, role, is_adult, parent_token, special_code';
-
-        const { data, error } = await supabase
-          .from('users')
-          .update(updatePayload)
-          .eq('id', userId)
-          .select(selectFields)
-          .single();
-
-        if (error) {
-          if (error.message?.toLowerCase().includes('alias')) {
-            return res.status(400).json({ error: 'Falta la columna alias en Supabase. Ejecuta el script SQL actualizado.' });
-          }
-          if (error.message?.toLowerCase().includes('special_code')) {
-            return res.status(400).json({ error: 'Falta la columna special_code en Supabase. Ejecuta el script SQL actualizado.' });
-          }
-          throw error;
-        }
-
-        updatedUser = { ...data, special_code: missingSpecialCodeColumn ? null : data?.special_code };
-      } else {
-        const result = await pool.query(
-          `UPDATE users
-           SET alias = $1,
-               special_code = $2
-           WHERE id = $3
-           RETURNING id, email, nombre, alias, role, is_adult, parent_token, special_code`,
-          [alias, nextSpecialCode, userId],
-        );
-
-        if (result.rows.length === 0) return res.status(404).json({ error: 'Usuario no encontrado' });
-        updatedUser = result.rows[0];
+        throw updateError;
       }
 
       return res.json({
@@ -672,6 +517,7 @@ export function registerAuthRoutes(app, deps) {
           email: updatedUser.email,
           name: updatedUser.nombre || updatedUser.name,
           alias: updatedUser.alias || null,
+          profileId: req.user.profileId || null,
           role: updatedUser.role,
           isAdult: updatedUser.is_adult,
           parentToken: updatedUser.parent_token,

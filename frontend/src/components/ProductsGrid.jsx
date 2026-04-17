@@ -68,37 +68,13 @@ export default function ProductsGrid({ user, mode = 'catalog', selectedCategory 
     const loadFavorites = async () => {
       try {
         const response = await getMyFavorites();
-        const remoteFavorites = Array.isArray(response?.favorites) ? response.favorites : [];
+        const remoteFavorites = Array.isArray(response?.favorites)
+          ? response.favorites.map(normalizeFavoriteId).filter(Boolean)
+          : [];
 
-        let legacyFavorites = [];
-        try {
-          const storedFavorites = localStorage.getItem('cafeteria-favorites');
-          legacyFavorites = storedFavorites ? JSON.parse(storedFavorites) : [];
-        } catch (storageError) {
-          console.error('Error al leer favoritos antiguos del dispositivo:', storageError);
-        }
-
-        const mergedFavorites = Array.from(
-          new Set(
-            [...remoteFavorites, ...(Array.isArray(legacyFavorites) ? legacyFavorites : [])]
-              .map(normalizeFavoriteId)
-              .filter(Boolean)
-          )
-        );
-
-        if (
-          mergedFavorites.length !== remoteFavorites.length ||
-          mergedFavorites.some((id, index) => id !== remoteFavorites[index])
-        ) {
-          const updatedResponse = await updateMyFavorites(mergedFavorites);
-          if (isMounted) {
-            setFavoriteIds(Array.isArray(updatedResponse?.favorites) ? updatedResponse.favorites : mergedFavorites);
-          }
-        } else if (isMounted) {
+        if (isMounted) {
           setFavoriteIds(remoteFavorites);
         }
-
-        localStorage.removeItem('cafeteria-favorites');
       } catch (favoritesError) {
         console.error('Error al cargar favoritos del usuario:', favoritesError);
         if (!isMounted) return;

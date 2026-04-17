@@ -35,7 +35,7 @@ export async function logSecurityEvent(supabase, {
 }
 
 // Calcular puntuación de confianza (Trust Score)
-export async function calculateTrustScore(supabase, userId) {
+export async function calculateTrustScore(supabase, userId, options = {}) {
   if (!supabase) return 50;
   
   try {
@@ -62,10 +62,15 @@ export async function calculateTrustScore(supabase, userId) {
     if (accountAge > thirtyDays) score += 10;
     
     // Obtener pedidos completados
-    const { data: orders } = await supabase
-      .from('pedidos')
-      .select('id, estado, id_perfil, id_pagador')
-      .or(`id_perfil.eq.${userId},id_pagador.eq.${userId}`);
+    let orders = null;
+    const profileId = options.profileId ? String(options.profileId).trim() : '';
+    if (profileId) {
+      const { data } = await supabase
+        .from('pedidos')
+        .select('id, estado, id_perfil, id_pagador')
+        .or(`id_perfil.eq.${profileId},id_pagador.eq.${profileId}`);
+      orders = data;
+    }
     
     if (orders) {
       const completedOrders = orders.filter((o) => ['pagado', 'completed', 'paid', 'completada'].includes(String(o.estado || '').toLowerCase()));

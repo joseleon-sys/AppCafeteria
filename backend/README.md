@@ -1,122 +1,37 @@
 # Backend - CafeteriaSSG
 
-API REST para la aplicación de cafetería. Stack: Node.js + Express + PostgreSQL (dockerizada).
+API REST de la aplicación de cafetería.
+
+La persistencia del backend usa Supabase siempre.
 
 ## Requisitos
 
-- Node.js 18+ (recomendado LTS)
-- Docker y Docker Compose
-- npm o pnpm
+- Node.js 18+
+- npm
+- Un proyecto Supabase configurado
 
-## Dependencias necesarias del backend
+## Dependencias
 
-El backend usa estas dependencias de `npm`:
-
-- Producción: `@supabase/supabase-js`, `bcryptjs`, `cors`, `dotenv`, `express`, `firebase-admin`, `jsonwebtoken`, `pg`, `stripe`
+- Producción: `@supabase/supabase-js`, `bcryptjs`, `cors`, `dotenv`, `express`, `firebase-admin`, `jsonwebtoken`, `stripe`, `@sentry/node`, `pino-http`
 - Desarrollo: `nodemon`
 
-Si aparece un error tipo `Cannot find package 'bcryptjs'`, significa que falta instalar las dependencias de `backend/`.
-
-## Arrancar la base de datos (Docker)
-
-Desde la raíz del proyecto (`D:\CafeteriaSSG`), ejecuta:
-
-```powershell
-# Copia el archivo de ejemplo de variables de entorno
-Copy-Item .env.example .env
-
-# Arranca Postgres y pgAdmin en contenedores
-docker-compose up -d
-
-# Verifica que los contenedores están corriendo
-docker ps
-```
-
-**Acceso a la base de datos:**
-- Host: `localhost`
-- Puerto: `5432`
-- Usuario: `cafeteria_user` (configurable en `.env`)
-- Password: `cafeteria_pass`
-- Base de datos: `cafeteria_db`
-
-**Acceso a pgAdmin (interfaz web):**
-- URL: [http://localhost:8080](http://localhost:8080)
-- Email: `admin@cafeteria.local`
-- Password: `admin`
-
-### Conectar pgAdmin a Postgres
-
-1. Abre [http://localhost:8080](http://localhost:8080)
-2. Añade un nuevo servidor (Add New Server):
-   - **General > Name**: Cafeteria Local
-   - **Connection > Host**: `postgres` (nombre del contenedor en la red Docker)
-   - **Connection > Port**: `5432`
-   - **Connection > Username**: `cafeteria_user`
-   - **Connection > Password**: `cafeteria_pass`
-   - **Connection > Maintenance database**: `cafeteria_db`
-3. Guarda y conéctate.
-
-## Estructura del backend
-
-```
-backend/
-├── src/
-│   ├── routes/         # Rutas de la API (orders, menu, users)
-│   ├── controllers/    # Lógica de negocio
-│   ├── models/         # Modelos (si usas ORM como Prisma)
-│   ├── middlewares/    # Autenticación, validación, etc.
-│   └── index.js        # Punto de entrada del servidor
-├── db/
-│   ├── init.sql        # Script inicial (schema + seeds)
-│   └── migrations/     # Migraciones (si usas herramienta de migrations)
-├── package.json
-├── .env                # Variables locales (no commitear)
-└── README.md           # Este archivo
-```
-
-## Instalar dependencias
-
-Desde la carpeta `backend/`:
-
-```powershell
-cd backend
-npm install
-```
-
-Si quieres una instalación limpia usando el lockfile:
-
-```powershell
-cd backend
-npm ci
-```
-
-## Verificación rápida
-
-Tras instalar dependencias, estos comandos deben funcionar:
-
-```powershell
-cd backend
-npm run dev
-```
-
-Si el problema era por paquetes no instalados, errores como `bcryptjs not found` o `pg not found` deberían desaparecer.
-
-## Ejecutar el servidor de desarrollo
-
-```powershell
-npm run dev
-```
-
-El servidor arranca en [http://localhost:3000](http://localhost:3000) por defecto.
-
-## Observabilidad: Sentry y ELK
-
-El backend ya incluye instrumentacion para Sentry y logs JSON compatibles con Logstash/Elastic.
-
-Variables recomendadas en `backend/.env`:
+## Variables de entorno mínimas
 
 ```env
-SENTRY_DSN=https://tu-dsn@sentry.io/proyecto
+SUPABASE_URL=https://tu-proyecto.supabase.co
+SUPABASE_SECRET_KEY=tu-service-role-o-secret-key
+JWT_SECRET=tu-clave-jwt
+PORT=3000
+FRONTEND_URL=http://localhost:5173
+```
+
+Opcionales:
+
+```env
+STRIPE_SECRET_KEY=sk_test_...
+DEV_BYPASS_STRIPE_PAYMENT=true
+
+SENTRY_DSN=https://...
 SENTRY_ENVIRONMENT=development
 SENTRY_RELEASE=cafeteria-backend@1.0.0
 SENTRY_TRACES_SAMPLE_RATE=0.1
@@ -126,71 +41,39 @@ LOG_LEVEL=info
 LOGSTASH_TCP_URL=localhost:5000
 ```
 
-Notas:
+## Instalación
 
-- Si `SENTRY_DSN` esta vacio, Sentry queda desactivado sin romper el arranque.
-- Los logs HTTP salen en JSON por stdout y, si `LOGSTASH_TCP_URL` esta definido, tambien se envian a Logstash por TCP.
-- Los campos sensibles como `authorization`, cookies, passwords y tokens se redactan.
-- `GET /api/health` informa si Sentry esta activo y que los logs estan en formato JSON.
-
-## Endpoints de ejemplo
-
-- `GET /api/health` — healthcheck
-- `GET /api/menu` — lista de productos del menú
-- `POST /api/orders` — crear orden
-- `GET /api/orders/:id` — detalle de orden
-
-## Persistencia de pedidos
-
-El backend maneja ahora mismo dos rutas de persistencia para pedidos estandar:
-
-- Esquema principal: si el usuario autenticado tiene un ID UUID, el pedido se guarda en `pedidos` y `lineas_pedido`.
-- Esquema local legacy: si el usuario autenticado tiene un ID numerico, el pedido se guarda en `orders` y `order_items`.
-
-Esto afecta especialmente al modo `DEV_BYPASS_STRIPE_PAYMENT`:
-
-- Antes: el bypass podia terminar solo en memoria si el usuario no tenia UUID.
-- Ahora: el bypass intenta persistir tambien en base de datos local usando `orders` y `order_items`.
-- Solo se usa el fallback en memoria si la base de datos no esta disponible.
-- Si `DEV_BYPASS_STRIPE_PAYMENT=true`, el backend omite Stripe solo en entorno local/desarrollo. En `NODE_ENV=production` o Railway se ignora para evitar saltar la pasarela de pago por accidente.
-
-El historial `GET /api/orders/my` y el detalle `GET /api/orders/:id` leen del mismo esquema en el que se persistio el pedido.
-
-(Implementar según necesidad del proyecto.)
-
-## Migraciones y seeds
-
-Si usas una herramienta de migraciones (Prisma Migrate, node-pg-migrate, Flyway):
-
-```powershell
-# Ejemplo con Prisma
-npx prisma migrate dev --name init
-
-# O ejecutar directamente SQL
-docker exec -i cafeteria_db psql -U cafeteria_user -d cafeteria_db < db/migrations/001_create_tables.sql
+```bash
+cd backend
+npm install
 ```
 
-## Detener y limpiar Docker
+## Desarrollo
 
-```powershell
-# Detener contenedores
-docker-compose down
-
-# Detener y borrar volúmenes (borra datos)
-docker-compose down -v
+```bash
+cd backend
+npm run dev
 ```
 
-## Buenas prácticas
+El backend arranca en `http://localhost:3000` por defecto.
 
-- Usar variables de entorno para credenciales y configuración.
-- Nunca commitear `.env` (ya está en `.gitignore`).
-- Validar y sanitizar inputs del cliente.
-- Usar transacciones para operaciones compuestas.
-- Testear endpoints con Postman, Insomnia o REST Client (VS Code).
+## Endpoints principales
 
-## Recursos
+- `GET /api/health`
+- `POST /api/auth/register`
+- `POST /api/auth/login`
+- `GET /api/menu`
+- `POST /api/orders`
+- `GET /api/orders/my`
+- `GET /api/orders/:id`
 
-- [Documentación de PostgreSQL](https://www.postgresql.org/docs/)
-- [Express.js](https://expressjs.com/)
-- [node-postgres (pg)](https://node-postgres.com/)
-- [Prisma](https://www.prisma.io/docs/) (ORM opcional)
+## Pedidos
+
+- Los pedidos estándar se persisten en Supabase en `pedidos` y `lineas_pedido`.
+- El historial y el detalle consultan siempre Supabase.
+- Si `DEV_BYPASS_STRIPE_PAYMENT=true`, en desarrollo se omite Stripe, pero el pedido igualmente se guarda en Supabase.
+
+## Notas
+
+- Si `SUPABASE_URL` o `SUPABASE_SECRET_KEY` faltan, el backend no arranca.
+- Usuarios, catálogo y pedidos dependen de Supabase.

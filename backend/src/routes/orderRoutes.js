@@ -1,205 +1,112 @@
 export function registerOrderRoutes(app, deps) {
   const {
     supabase,
-    pool,
     stripe,
     developmentPaymentBypassEnabled,
-    isLocalDatabaseUnavailable,
     authenticateToken,
     validateOrderItems,
     parsePositiveInteger,
     buildOrderStatusAliases,
     normalizeHistoricOrderEntry,
-    isUuidLike,
+    resolveProfileIdForUser,
   } = deps;
-  const devBypassOrders = [];
 
-  function createInMemoryPaidOrder(userId, validatedOrder, paymentMethod = 'dev-bypass') {
-    const createdAt = new Date().toISOString();
-    const orderId = `dev-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    const items = validatedOrder.items.map((item, index) => ({
-      id: `${orderId}-item-${index + 1}`,
-      product_id: item.product_id,
-      product_name: item.product_name,
-      quantity: item.quantity,
-      price: item.price,
-      subtotal: item.subtotal,
-      notes: item.notes || '',
-    }));
+  function requireSupabase(res) {
+    return res.status(503).json({ error: 'Supabase no esta configurado en el backend' });
+  }
 
-    const order = {
-      id: orderId,
-      user_id: String(userId),
-      status: 'paid',
-      total: validatedOrder.total,
-      payment_method: paymentMethod,
-      amount_paid: validatedOrder.total,
-      paid_at: createdAt,
-      created_at: createdAt,
+  function mapPedidoItems(lineasPedido = []) {
+    return Array.isArray(lineasPedido)
+      ? lineasPedido.map((item) => {
+          const price = Number.parseFloat(item.precio_compra ?? 0) || 0;
+          return {
+            id: item.id,
+            product_id: item.id_producto_menu,
+            product_name: item.nombre_producto || 'Producto',
+            quantity: 1,
+            price,
+            subtotal: price,
+            notes: item.notas || '',
+          };
+        })
+      : [];
+  }
+
+  function mapPedidoToHistoricOrder(order) {
+    const items = mapPedidoItems(order?.lineas_pedido);
+
+    return normalizeHistoricOrderEntry({
+      id: order.id,
+      status: order.estado,
+      created_at: order.fecha_creacion,
       items,
       items_count: items.length,
-      is_dev_bypass: true,
-    };
-
-    devBypassOrders.unshift(order);
-    return order;
+      total: items.reduce((sum, item) => sum + item.subtotal, 0),
+    });
   }
 
-  function getDevBypassOrdersForUser(userId, status = null, limit = 50) {
-    return devBypassOrders
-      .filter((order) => String(order.user_id) === String(userId))
-      .filter((order) => !status || buildOrderStatusAliases(status).includes(order.status))
-      .slice(0, limit)
-      .map((order) => normalizeHistoricOrderEntry(order));
-  }
-
-  // Entorno local legacy: usuarios con IDs numéricos persisten en orders/order_items.
-  // Esto evita que el dev bypass dependa de UUIDs o de la tabla pedidos.
-  async function createLegacyPaidOrderForUser(userId, validatedOrder, paymentMethod = 'dev-bypass') {
-    if (!pool) {
-      throw new Error('No hay base de datos local disponible para persistir el pedido');
+  async function createPaidOrderForUser(userId, validatedOrder, paymentMethod = 'dev-bypass') {
+    if (!supabase) {
+      const error = new Error('Supabase no esta configurado en el backend');
+      error.statusCode = 503;
+      throw error;
     }
 
-    const orderResult = await pool.query(
-      `INSERT INTO orders (user_id, status, total)
-       VALUES ($1, $2, $3)
-       RETURNING *`,
-      [userId, 'paid', validatedOrder.total],
-    );
-
-    const order = orderResult.rows[0];
-
-    for (const item of validatedOrder.items) {
-      await pool.query(
-        `INSERT INTO order_items (order_id, menu_item_id, quantity, price, notes)
-         VALUES ($1, $2, $3, $4, $5)`,
-        [
-          order.id,
-          item.product_id,
-          item.quantity,
-          item.price,
-          item.notes || null,
-        ],
-      );
+    const profileId = await resolveProfileIdForUser(userId);
+    if (!profileId) {
+      const error = new Error('No se pudo resolver el perfil del usuario para guardar el pedido');
+      error.statusCode = 400;
+      throw error;
     }
+
+    const { data: order, error: orderError } = await supabase
+      .from('pedidos')
+      .insert({
+        id_perfil: profileId,
+        id_pagador: profileId,
+        estado: 'PAGADO',
+        id_pasarela_pago: paymentMethod,
+      })
+      .select()
+      .single();
+
+    if (orderError) throw orderError;
+
+    const itemsToInsert = validatedOrder.items.flatMap((item) => {
+      const quantity = Number.parseInt(item.quantity, 10) || 1;
+      return Array.from({ length: quantity }, () => ({
+        id_pedido: order.id,
+        id_producto_menu: item.product_id,
+        nombre_producto: item.product_name,
+        precio_compra: item.price,
+        notas: item.notes || null,
+        opciones_elegidas: {},
+      }));
+    });
+
+    const { error: itemsError } = await supabase.from('lineas_pedido').insert(itemsToInsert);
+    if (itemsError) throw itemsError;
 
     return {
       ...order,
       status: 'paid',
-      payment_method: paymentMethod,
-      amount_paid: validatedOrder.total,
-      paid_at: order.created_at,
     };
-  }
-
-  async function createPaidOrderForUser(userId, validatedOrder, paymentMethod = 'dev-bypass') {
-    try {
-      // Supabase y el esquema real esperan UUIDs en pedidos.id_perfil/id_pagador.
-      // Si el usuario autenticado no tiene UUID, guardamos en el esquema local legacy.
-      if (!isUuidLike(userId)) {
-        return await createLegacyPaidOrderForUser(userId, validatedOrder, paymentMethod);
-      }
-
-      const client = supabase || {
-        from(tableName) {
-          return {
-            insert: async (payload) => {
-              if (tableName === 'pedidos') {
-                const result = await pool.query(
-                  `INSERT INTO pedidos (id_perfil, id_pagador, estado, id_pasarela_pago)
-                   VALUES ($1, $2, $3, $4)
-                   RETURNING *`,
-                  [payload.id_perfil, payload.id_pagador, payload.estado, payload.id_pasarela_pago],
-                );
-                return {
-                  select() {
-                    return {
-                      single: async () => ({ data: result.rows[0], error: null }),
-                    };
-                  },
-                };
-              }
-
-              if (tableName === 'lineas_pedido') {
-                for (const item of payload) {
-                  await pool.query(
-                    `INSERT INTO lineas_pedido (
-                      id_pedido, id_producto_menu, nombre_producto, precio_compra, notas, opciones_elegidas
-                    ) VALUES ($1, $2, $3, $4, $5, $6::jsonb)`,
-                    [
-                      item.id_pedido,
-                      item.id_producto_menu,
-                      item.nombre_producto,
-                      item.precio_compra,
-                      item.notas,
-                      JSON.stringify(item.opciones_elegidas || {}),
-                    ],
-                  );
-                }
-                return { error: null };
-              }
-
-              throw new Error(`Tabla no soportada en adaptador local: ${tableName}`);
-            },
-          };
-        },
-      };
-
-      const { data: order, error: orderError } = await client
-        .from('pedidos')
-        .insert({
-          id_perfil: userId,
-          id_pagador: userId,
-          estado: 'PAGADO',
-          id_pasarela_pago: paymentMethod,
-        })
-        .select()
-        .single();
-
-      if (orderError) throw orderError;
-
-      const itemsToInsert = validatedOrder.items.flatMap((item) => {
-        const quantity = Number.parseInt(item.quantity, 10) || 1;
-        return Array.from({ length: quantity }, () => ({
-          id_pedido: order.id,
-          id_producto_menu: item.product_id,
-          nombre_producto: item.product_name,
-          precio_compra: item.price,
-          notas: item.notes || null,
-          opciones_elegidas: {},
-        }));
-      });
-
-      const { error: itemsError } = await client.from('lineas_pedido').insert(itemsToInsert);
-      if (itemsError) throw itemsError;
-
-      return {
-        ...order,
-        status: 'paid',
-      };
-    } catch (error) {
-      // El array en memoria queda como ultimo recurso solo si la BD no esta disponible.
-      if (developmentPaymentBypassEnabled && isLocalDatabaseUnavailable?.(error)) {
-        return createInMemoryPaidOrder(userId, validatedOrder, paymentMethod);
-      }
-      throw error;
-    }
   }
 
   app.post('/api/orders', authenticateToken, async (req, res) => {
     const { items } = req.body || {};
 
+    if (!supabase) return requireSupabase(res);
     if (req.user.role === 'child') {
       return res.status(403).json({ error: 'Los perfiles de menor deben usar el flujo de pedidos con aprobacion parental' });
     }
-
     if (!Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ error: 'El carrito esta vacio' });
     }
 
     try {
       const validatedOrder = await validateOrderItems(items, { userId: req.user.id });
-      const order = await createPaidOrderForUser(req.user.id, validatedOrder, 'manual');
+      const order = await createPaidOrderForUser(req.user, validatedOrder, 'manual');
 
       return res.status(201).json({
         order_id: order.id,
@@ -214,6 +121,8 @@ export function registerOrderRoutes(app, deps) {
   });
 
   app.post('/api/stripe/create-checkout-session', authenticateToken, async (req, res) => {
+    if (!supabase) return requireSupabase(res);
+
     try {
       const { items } = req.body || {};
 
@@ -224,7 +133,7 @@ export function registerOrderRoutes(app, deps) {
       const validatedOrder = await validateOrderItems(items, { userId: req.user.id });
 
       if (developmentPaymentBypassEnabled) {
-        const order = await createPaidOrderForUser(req.user.id, validatedOrder);
+        const order = await createPaidOrderForUser(req.user, validatedOrder);
         return res.status(201).json({
           bypassed: true,
           order_id: order.id,
@@ -269,6 +178,8 @@ export function registerOrderRoutes(app, deps) {
   });
 
   app.get('/api/orders/my', authenticateToken, async (req, res) => {
+    if (!supabase) return requireSupabase(res);
+
     const { status } = req.query;
     const limit = parsePositiveInteger(req.query.limit, 50);
     const normalizedStatuses = buildOrderStatusAliases(status);
@@ -278,178 +189,39 @@ export function registerOrderRoutes(app, deps) {
     }
 
     try {
-      if (supabase && isUuidLike(req.user.id)) {
-        let query = supabase
-          .from('pedidos')
-          .select(`
+      const profileId = await resolveProfileIdForUser(req.user);
+      if (!profileId) {
+        return res.status(400).json({ error: 'No se pudo resolver el perfil del usuario para consultar pedidos' });
+      }
+
+      let query = supabase
+        .from('pedidos')
+        .select(`
+          id,
+          estado,
+          fecha_creacion,
+          id_perfil,
+          id_pagador,
+          lineas_pedido (
             id,
-            estado,
-            fecha_creacion,
-            id_perfil,
-            id_pagador,
-            lineas_pedido (
-              id,
-              id_producto_menu,
-              nombre_producto,
-              precio_compra,
-              notas
-            )
-          `)
-          .or(`id_perfil.eq.${req.user.id},id_pagador.eq.${req.user.id}`)
-          .order('fecha_creacion', { ascending: false })
-          .limit(limit);
+            id_producto_menu,
+            nombre_producto,
+            precio_compra,
+            notas
+          )
+        `)
+        .or(`id_perfil.eq.${profileId},id_pagador.eq.${profileId}`)
+        .order('fecha_creacion', { ascending: false })
+        .limit(limit);
 
-        const { data, error } = await query;
-        if (error) throw error;
+      const { data, error } = await query;
+      if (error) throw error;
 
-        const orders = (data || [])
-          .map((order) => {
-            const items = Array.isArray(order.lineas_pedido)
-              ? order.lineas_pedido.map((item) => {
-                  const price = Number.parseFloat(item.precio_compra ?? 0) || 0;
-                  return {
-                    id: item.id,
-                    product_id: item.id_producto_menu,
-                    product_name: item.nombre_producto || 'Producto',
-                    quantity: 1,
-                    price,
-                    subtotal: price,
-                    notes: item.notas || '',
-                  };
-                })
-              : [];
+      const orders = (data || [])
+        .map(mapPedidoToHistoricOrder)
+        .filter((order) => !status || normalizedStatuses.includes(order.status));
 
-            return normalizeHistoricOrderEntry({
-              id: order.id,
-              status: order.estado,
-              created_at: order.fecha_creacion,
-              items,
-              items_count: items.length,
-              total: items.reduce((sum, item) => sum + item.subtotal, 0),
-            });
-          })
-          .filter((order) => !status || normalizedStatuses.includes(order.status));
-
-        return res.json({ orders });
-      }
-
-      try {
-        if (!isUuidLike(req.user.id)) {
-          // Historial local para usuarios legacy: leer desde orders/order_items,
-          // que es donde tambien persiste el dev bypass en desarrollo.
-          const params = [String(req.user.id)];
-          let paramIndex = 2;
-          let query = `
-            SELECT
-              o.id,
-              o.status,
-              o.created_at,
-              o.total,
-              COUNT(oi.id) AS items_count,
-              COALESCE(
-                json_agg(
-                  json_build_object(
-                    'id', oi.id,
-                    'product_id', oi.menu_item_id,
-                    'product_name', COALESCE(mi.name, 'Producto'),
-                    'quantity', COALESCE(oi.quantity, 1),
-                    'price', COALESCE(oi.price, 0),
-                    'subtotal', COALESCE(oi.price, 0) * COALESCE(oi.quantity, 1),
-                    'notes', COALESCE(oi.notes, '')
-                  )
-                ) FILTER (WHERE oi.id IS NOT NULL),
-                '[]'::json
-              ) AS items
-            FROM orders o
-            LEFT JOIN order_items oi ON oi.order_id = o.id
-            LEFT JOIN menu_items mi ON mi.id = oi.menu_item_id
-            WHERE o.user_id::text = $1
-          `;
-
-          if (status) {
-            query += ` AND LOWER(COALESCE(o.status, '')) = ANY($${paramIndex})`;
-            params.push(normalizedStatuses);
-            paramIndex += 1;
-          }
-
-          query += `
-            GROUP BY o.id, o.status, o.created_at, o.total
-            ORDER BY o.created_at DESC
-            LIMIT $${paramIndex}
-          `;
-          params.push(limit);
-
-          const result = await pool.query(query, params);
-          return res.json({
-            orders: (result.rows || []).map((row) => normalizeHistoricOrderEntry({
-              id: row.id,
-              status: row.status,
-              created_at: row.created_at,
-              total: row.total,
-              items_count: row.items_count,
-              items: Array.isArray(row.items) ? row.items : [],
-            })),
-          });
-        }
-
-        const params = [String(req.user.id)];
-        let paramIndex = 2;
-        let query = `
-          SELECT
-            p.id,
-            p.estado,
-            p.fecha_creacion,
-            COALESCE(SUM(COALESCE(lp.precio_compra, 0)), 0) AS total,
-            COUNT(lp.id) AS items_count,
-            COALESCE(
-              json_agg(
-                json_build_object(
-                  'id', lp.id,
-                  'product_id', lp.id_producto_menu,
-                  'product_name', lp.nombre_producto,
-                  'quantity', 1,
-                  'price', COALESCE(lp.precio_compra, 0),
-                  'subtotal', COALESCE(lp.precio_compra, 0),
-                  'notes', COALESCE(lp.notas, '')
-                )
-              ) FILTER (WHERE lp.id IS NOT NULL),
-              '[]'::json
-            ) AS items
-          FROM pedidos p
-          LEFT JOIN lineas_pedido lp ON lp.id_pedido = p.id
-          WHERE (p.id_perfil::text = $1 OR p.id_pagador::text = $1)
-        `;
-
-        if (status) {
-          query += ` AND LOWER(COALESCE(p.estado, '')) = ANY($${paramIndex})`;
-          params.push(normalizedStatuses);
-          paramIndex += 1;
-        }
-
-        query += `
-          GROUP BY p.id, p.estado, p.fecha_creacion
-          ORDER BY p.fecha_creacion DESC
-          LIMIT $${paramIndex}
-        `;
-        params.push(limit);
-
-        const result = await pool.query(query, params);
-        return res.json({
-          orders: (result.rows || []).map((row) => normalizeHistoricOrderEntry({
-            id: row.id,
-            status: row.estado,
-            created_at: row.fecha_creacion,
-            total: row.total,
-            items_count: row.items_count,
-            items: Array.isArray(row.items) ? row.items : [],
-          })),
-        });
-      } catch (error) {
-        if (developmentPaymentBypassEnabled && isLocalDatabaseUnavailable?.(error)) {
-          return res.json({ orders: getDevBypassOrdersForUser(req.user.id, null, limit) });
-        }
-        throw error;
-      }
+      return res.json({ orders });
     } catch (error) {
       console.error('Error al listar pedidos estandar:', error);
       return res.status(500).json({ error: 'Error al obtener pedidos' });
@@ -457,6 +229,8 @@ export function registerOrderRoutes(app, deps) {
   });
 
   app.get('/api/orders/:id', authenticateToken, async (req, res) => {
+    if (!supabase) return requireSupabase(res);
+
     const orderId = String(req.params.id || '').trim();
 
     if (!orderId) return res.status(400).json({ error: 'ID de pedido invalido' });
@@ -465,177 +239,37 @@ export function registerOrderRoutes(app, deps) {
     }
 
     try {
-      if (developmentPaymentBypassEnabled && !isUuidLike(req.user.id) && String(orderId).startsWith('dev-')) {
-        const devOrder = devBypassOrders.find((order) => String(order.id) === orderId && String(order.user_id) === String(req.user.id));
-        if (devOrder) return res.json({ order: normalizeHistoricOrderEntry(devOrder) });
+      const profileId = await resolveProfileIdForUser(req.user);
+      if (!profileId) {
+        return res.status(400).json({ error: 'No se pudo resolver el perfil del usuario para consultar el pedido' });
       }
 
-      if (supabase && isUuidLike(req.user.id)) {
-        let query = supabase
-          .from('pedidos')
-          .select(`
+      let query = supabase
+        .from('pedidos')
+        .select(`
+          id,
+          estado,
+          fecha_creacion,
+          id_perfil,
+          id_pagador,
+          lineas_pedido (
             id,
-            estado,
-            fecha_creacion,
-            id_perfil,
-            id_pagador,
-            lineas_pedido (
-              id,
-              id_producto_menu,
-              nombre_producto,
-              precio_compra,
-              notas
-            )
-          `)
-          .eq('id', orderId);
+            id_producto_menu,
+            nombre_producto,
+            precio_compra,
+            notas
+          )
+        `)
+        .eq('id', orderId);
 
-        if (req.user.role !== 'admin') {
-          query = query.or(`id_perfil.eq.${req.user.id},id_pagador.eq.${req.user.id}`);
-        }
-
-        const { data: order, error } = await query.single();
-        if (error || !order) return res.status(404).json({ error: 'Pedido no encontrado' });
-
-        const items = Array.isArray(order.lineas_pedido)
-          ? order.lineas_pedido.map((item) => {
-              const price = Number.parseFloat(item.precio_compra ?? 0) || 0;
-              return {
-                id: item.id,
-                product_id: item.id_producto_menu,
-                product_name: item.nombre_producto || 'Producto',
-                quantity: 1,
-                price,
-                subtotal: price,
-                notes: item.notas || '',
-              };
-            })
-          : [];
-
-        return res.json({
-          order: normalizeHistoricOrderEntry({
-            id: order.id,
-            status: order.estado,
-            created_at: order.fecha_creacion,
-            items,
-            items_count: items.length,
-            total: items.reduce((sum, item) => sum + item.subtotal, 0),
-          }),
-        });
+      if (req.user.role !== 'admin') {
+        query = query.or(`id_perfil.eq.${profileId},id_pagador.eq.${profileId}`);
       }
 
-      try {
-        if (!isUuidLike(req.user.id)) {
-          // Detalle local para usuarios legacy: misma fuente persistida que el historial.
-          const params = [orderId];
-          let query = `
-            SELECT
-              o.id,
-              o.status,
-              o.created_at,
-              o.total,
-              COUNT(oi.id) AS items_count,
-              COALESCE(
-                json_agg(
-                  json_build_object(
-                    'id', oi.id,
-                    'product_id', oi.menu_item_id,
-                    'product_name', COALESCE(mi.name, 'Producto'),
-                    'quantity', COALESCE(oi.quantity, 1),
-                    'price', COALESCE(oi.price, 0),
-                    'subtotal', COALESCE(oi.price, 0) * COALESCE(oi.quantity, 1),
-                    'notes', COALESCE(oi.notes, '')
-                  )
-                ) FILTER (WHERE oi.id IS NOT NULL),
-                '[]'::json
-              ) AS items
-            FROM orders o
-            LEFT JOIN order_items oi ON oi.order_id = o.id
-            LEFT JOIN menu_items mi ON mi.id = oi.menu_item_id
-            WHERE o.id::text = $1
-          `;
+      const { data: order, error } = await query.single();
+      if (error || !order) return res.status(404).json({ error: 'Pedido no encontrado' });
 
-          if (req.user.role !== 'admin') {
-            params.push(String(req.user.id));
-            query += ` AND o.user_id::text = $2`;
-          }
-
-          query += `
-            GROUP BY o.id, o.status, o.created_at, o.total
-            LIMIT 1
-          `;
-
-          const orderResult = await pool.query(query, params);
-          const order = orderResult.rows[0];
-          if (!order) return res.status(404).json({ error: 'Pedido no encontrado' });
-          return res.json({
-            order: normalizeHistoricOrderEntry({
-              id: order.id,
-              status: order.status,
-              created_at: order.created_at,
-              total: order.total,
-              items_count: order.items_count,
-              items: Array.isArray(order.items) ? order.items : [],
-            }),
-          });
-        }
-
-        const params = [orderId];
-        let query = `
-          SELECT
-            p.id,
-            p.estado,
-            p.fecha_creacion,
-            COALESCE(SUM(COALESCE(lp.precio_compra, 0)), 0) AS total,
-            COUNT(lp.id) AS items_count,
-            COALESCE(
-              json_agg(
-                json_build_object(
-                  'id', lp.id,
-                  'product_id', lp.id_producto_menu,
-                  'product_name', lp.nombre_producto,
-                  'quantity', 1,
-                  'price', COALESCE(lp.precio_compra, 0),
-                  'subtotal', COALESCE(lp.precio_compra, 0),
-                  'notes', COALESCE(lp.notas, '')
-                )
-              ) FILTER (WHERE lp.id IS NOT NULL),
-              '[]'::json
-            ) AS items
-          FROM pedidos p
-          LEFT JOIN lineas_pedido lp ON lp.id_pedido = p.id
-          WHERE p.id::text = $1
-        `;
-
-        if (req.user.role !== 'admin') {
-          params.push(String(req.user.id));
-          query += ` AND (p.id_perfil::text = $2 OR p.id_pagador::text = $2)`;
-        }
-
-        query += `
-          GROUP BY p.id, p.estado, p.fecha_creacion
-          LIMIT 1
-        `;
-
-        const orderResult = await pool.query(query, params);
-        const order = orderResult.rows[0];
-        if (!order) return res.status(404).json({ error: 'Pedido no encontrado' });
-        return res.json({
-          order: normalizeHistoricOrderEntry({
-            id: order.id,
-            status: order.estado,
-            created_at: order.fecha_creacion,
-            total: order.total,
-            items_count: order.items_count,
-            items: Array.isArray(order.items) ? order.items : [],
-          }),
-        });
-      } catch (error) {
-        if (developmentPaymentBypassEnabled && isLocalDatabaseUnavailable?.(error)) {
-          const devOrder = devBypassOrders.find((order) => String(order.id) === orderId && String(order.user_id) === String(req.user.id));
-          if (devOrder) return res.json({ order: normalizeHistoricOrderEntry(devOrder) });
-        }
-        throw error;
-      }
+      return res.json({ order: mapPedidoToHistoricOrder(order) });
     } catch (error) {
       console.error('Error al obtener detalle de pedido estandar:', error);
       return res.status(500).json({ error: 'Error al obtener detalle del pedido' });

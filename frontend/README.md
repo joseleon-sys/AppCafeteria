@@ -141,7 +141,7 @@ const createOrder = async (orderData) => {
 Notas sobre persistencia en desarrollo:
 
 - Si el backend trabaja con usuarios UUID, el pedido termina en `pedidos` y `lineas_pedido`.
-- Si el backend trabaja con usuarios legacy con ID numerico, el pedido termina en `orders` y `order_items`.
+- Los pedidos se guardan siempre en Supabase a través del backend.
 - Con `DEV_BYPASS_STRIPE_PAYMENT`, el pedido ya no deberia quedarse solo en cache local salvo que la base de datos este caida.
 
 ## Build para producción

@@ -14,7 +14,6 @@ import { useHistory } from 'react-router-dom';
 import CartPanel from '../components/CartPanel';
 import { useCart } from '../lib/CartContext';
 import { createCheckoutSession } from '../lib/api';
-import { storeDevBypassOrder } from '../lib/orderService';
 import './CartPage.css';
 
 const CartPage = () => {
@@ -92,6 +91,11 @@ const CartPage = () => {
     setIsProcessingOrder(true);
 
     try {
+      const hasInvalidItems = cartItems.some((item) => !String(item?.id ?? '').trim());
+      if (hasInvalidItems) {
+        throw new Error('Hay productos antiguos o invalidos en el carrito. Vacialo y vuelve a anadirlos.');
+      }
+
       const itemsPayload = cartItems.map(item => ({
         product_id: item.id,
         quantity: item.quantity
@@ -105,27 +109,6 @@ const CartPage = () => {
       }
 
       if (data?.bypassed && data?.redirect_url) {
-        storeDevBypassOrder({
-          id: data.order_id,
-          user_id: storedUser?.userId || storedUser?.id || null,
-          status: data.status,
-          total: data.total,
-          payment_method: 'dev-bypass',
-          amount_paid: data.total,
-          paid_at: new Date().toISOString(),
-          created_at: new Date().toISOString(),
-          items: cartItems.map((item, index) => ({
-            id: `${data.order_id}-local-item-${index + 1}`,
-            product_id: item.id,
-            product_name: item.name,
-            quantity: item.quantity,
-            price: item.price,
-            subtotal: Number(item.totalPrice || item.price * item.quantity || 0),
-            notes: item.notes || '',
-          })),
-          items_count: cartItems.length,
-          is_dev_bypass: true,
-        });
         clearCart();
         window.location.href = data.redirect_url;
         return;

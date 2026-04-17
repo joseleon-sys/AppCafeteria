@@ -21,7 +21,6 @@ export async function resetUserPassword({
   birthDate,
   newPassword,
   supabase,
-  pool,
 }) {
   const normalizedEmail = normalizeEmail(email);
   const normalizedBirthDate = String(birthDate || '').trim();
@@ -40,53 +39,36 @@ export async function resetUserPassword({
 
   const passwordHash = await bcrypt.hash(newPassword, 10);
 
-  if (supabase) {
-    const { data: user, error: fetchError } = await supabase
-      .from('users')
-      .select('id, email, birth_date, active')
-      .ilike('email', normalizedEmail)
-      .eq('active', true)
-      .maybeSingle();
-
-    if (fetchError) throw fetchError;
-    if (!user) throw buildValidationError('No se pudo validar la identidad del usuario', 404);
-
-    const storedBirthDate = String(user.birth_date || '').slice(0, 10);
-    if (storedBirthDate !== normalizedBirthDate) {
-      throw buildValidationError('Los datos proporcionados no coinciden con ningún usuario activo', 400);
-    }
-
-    const { error: updateError } = await supabase
-      .from('users')
-      .update({
-        password_hash: passwordHash,
-      })
-      .eq('id', user.id);
-
-    if (updateError) throw updateError;
-
-    return {
-      userId: user.id,
-      email: user.email,
-    };
+  if (!supabase) {
+    throw buildValidationError('Supabase no esta configurado en el backend', 503);
   }
 
-  const result = await pool.query(
-    `UPDATE users
-     SET password_hash = $1
-     WHERE LOWER(TRIM(email)) = $2
-       AND birth_date = $3
-       AND active = true
-     RETURNING id, email`,
-    [passwordHash, normalizedEmail, normalizedBirthDate],
-  );
+  const { data: user, error: fetchError } = await supabase
+    .from('users')
+    .select('id, email, birth_date, active')
+    .ilike('email', normalizedEmail)
+    .eq('active', true)
+    .maybeSingle();
 
-  if (result.rows.length === 0) {
+  if (fetchError) throw fetchError;
+  if (!user) throw buildValidationError('No se pudo validar la identidad del usuario', 404);
+
+  const storedBirthDate = String(user.birth_date || '').slice(0, 10);
+  if (storedBirthDate !== normalizedBirthDate) {
     throw buildValidationError('Los datos proporcionados no coinciden con ningún usuario activo', 400);
   }
 
+  const { error: updateError } = await supabase
+    .from('users')
+    .update({
+      password_hash: passwordHash,
+    })
+    .eq('id', user.id);
+
+  if (updateError) throw updateError;
+
   return {
-    userId: result.rows[0].id,
-    email: result.rows[0].email,
+    userId: user.id,
+    email: user.email,
   };
 }

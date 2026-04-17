@@ -4,6 +4,29 @@ import { useState, useEffect, useCallback } from 'react';
  * Hook personalizado para manejar el estado del carrito
  * Incluye persistencia en localStorage y funciones auxiliares
  */
+function normalizeStoredCartItem(item) {
+  if (!item || typeof item !== 'object') return null;
+
+  const id = String(item.id ?? '').trim();
+  const name = String(item.name ?? '').trim();
+  const price = Number.parseFloat(item.price);
+  const quantity = Number.parseInt(item.quantity, 10);
+
+  if (!id || !name || !Number.isFinite(price) || !Number.isFinite(quantity) || quantity <= 0) {
+    return null;
+  }
+
+  return {
+    id,
+    name,
+    price,
+    image: item.image || '',
+    quantity,
+    chosen_options: item.chosen_options && typeof item.chosen_options === 'object' ? item.chosen_options : {},
+    notes: typeof item.notes === 'string' ? item.notes : '',
+  };
+}
+
 export const useCart = () => {
   const [cartItems, setCartItems] = useState([]);
   const [discount, setDiscount] = useState(0);
@@ -17,7 +40,12 @@ export const useCart = () => {
 
     if (savedCart) {
       try {
-        setCartItems(JSON.parse(savedCart));
+        const parsedCart = JSON.parse(savedCart);
+        const normalizedCart = Array.isArray(parsedCart)
+          ? parsedCart.map(normalizeStoredCartItem).filter(Boolean)
+          : [];
+
+        setCartItems(normalizedCart);
       } catch (error) {
         console.error('Error loading cart from localStorage:', error);
       }
