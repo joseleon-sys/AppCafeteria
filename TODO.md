@@ -8,6 +8,10 @@
 - [ ] Adaptar creación, listado, detalle, aprobación, rechazo, pago y modificación de pedidos infantiles para trabajar con `pedidos` y `lineas_pedido`.
 - [ ] Definir cómo se relacionan `users.id` (`bigint`) y `perfiles.id` (`uuid`) dentro del flujo padre/hijo.
 - [ ] Resolver la incompatibilidad entre `parent_child_links.parent_id/child_id -> users.id` y `pedidos.id_perfil/id_pagador -> perfiles.id`.
+- [ ] Revisar `backend/src/routes/childOrderRoutes.js`: aún mantiene un flujo dual legacy (`child_orders`/`child_order_items`) y el nuevo modelo (`pedidos`/`lineas_pedido`) según el origen de datos.
+- [ ] Definir si el `req.user.id` autenticado debe normalizarse a `perfiles.id` o a `users.id`; el backend actual mezcla bigint y UUID en los mismos flujos de pedido.
+- [ ] Revisar `backend/src/routes/authRoutes.js` para crear/leer `perfiles` junto con `users`, porque `pedidos` y `lineas_pedido` requieren IDs de `perfiles`.
+- [ ] Confirmar si la tabla `vinculos_familiares` forma parte del esquema actual o debe eliminarse, porque no se usa en ningún handler del backend.
 - [ ] Decidir si el backend debe operar sobre `users`, sobre `perfiles`, o sobre ambos con un mapeo explícito.
 
 ### 2. Revisar el modelo de autenticación frente al modelo de pedidos
