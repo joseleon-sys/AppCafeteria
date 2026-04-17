@@ -175,13 +175,35 @@ export async function fetchOrderHistoryForUser(user) {
   }
 
   if (user.role === 'parent') {
-    try {
-      const response = await getOrderHistory({});
-      return extractOrders(response).map((order) => normalizeHistoryEntry(order, 'parent'));
-    } catch {
-      const fallbackResponse = await getMyOrders();
-      return extractOrders(fallbackResponse).map((order) => normalizeHistoryEntry(order, 'standard'));
+    const [parentHistoryResult, standardHistoryResult] = await Promise.allSettled([
+      getOrderHistory({}),
+      getMyOrders(),
+    ]);
+
+    const parentOrders = parentHistoryResult.status === 'fulfilled'
+      ? extractOrders(parentHistoryResult.value).map((order) => normalizeHistoryEntry(order, 'parent'))
+      : [];
+
+    const standardOrders = standardHistoryResult.status === 'fulfilled'
+      ? extractOrders(standardHistoryResult.value).map((order) => normalizeHistoryEntry(order, 'standard'))
+      : [];
+
+    if (
+      parentHistoryResult.status === 'rejected'
+      && standardHistoryResult.status === 'rejected'
+    ) {
+      throw standardHistoryResult.reason || parentHistoryResult.reason || new Error('No se pudo cargar el historial');
     }
+
+    const seen = new Set();
+    return [...standardOrders, ...parentOrders]
+      .filter((order) => {
+        const key = `${order.source}:${String(order.id)}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      })
+      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   }
 
   const response = await getMyOrders();
