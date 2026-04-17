@@ -1,4 +1,16 @@
-const API_URL = import.meta.env.VITE_API_URL || import.meta.env.BACKEND_URL || 'http://localhost:3000';
+const DEFAULT_API_URL = 'http://localhost:3000';
+
+function normalizeApiUrl(url) {
+  return String(url || '').trim().replace(/\/+$/, '');
+}
+
+function uniqueUrls(urls) {
+  return urls.filter((url, index) => url && urls.indexOf(url) === index);
+}
+
+const API_URL = normalizeApiUrl(import.meta.env.VITE_API_URL || import.meta.env.BACKEND_URL || DEFAULT_API_URL);
+const API_FALLBACK_URL = normalizeApiUrl(import.meta.env.VITE_API_FALLBACK_URL || import.meta.env.VITE_RAILWAY_API_URL);
+const API_URLS = uniqueUrls([API_URL, API_FALLBACK_URL]);
 
 function getAuthToken() {
   return localStorage.getItem('cafeteria_token');
@@ -39,15 +51,32 @@ async function apiRequest(path, options = {}, { auth = false, contentType = fals
     ...(options.headers || {}),
   };
 
-  const response = await fetch(`${API_URL}${path}`, {
-    ...options,
-    headers,
-  });
+  let lastNetworkError;
 
-  return handleResponse(response);
+  for (const baseUrl of API_URLS) {
+    let response;
+
+    try {
+      response = await fetch(`${baseUrl}${path}`, {
+        ...options,
+        headers,
+      });
+    } catch (error) {
+      if (error?.name === 'AbortError') {
+        throw error;
+      }
+
+      lastNetworkError = error;
+      continue;
+    }
+
+    return handleResponse(response);
+  }
+
+  throw lastNetworkError || new Error('No API URL configured');
 }
 
-export { API_URL, getAuthToken, getAuthHeaders, handleResponse, apiRequest };
+export { API_URL, API_FALLBACK_URL, API_URLS, getAuthToken, getAuthHeaders, handleResponse, apiRequest };
 
 export async function loginUser(credentials) {
   return apiRequest('/api/auth/login', {
@@ -325,6 +354,8 @@ export async function deleteUser(userId) {
 
 export default {
   API_URL,
+  API_FALLBACK_URL,
+  API_URLS,
   loginUser,
   registerUser,
   getAllProducts,
