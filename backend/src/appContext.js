@@ -107,7 +107,11 @@ function parseBooleanValue(value, defaultValue = true) {
   return Boolean(value);
 }
 
-function isDevelopmentPaymentBypassEnabled() {
+function isDevelopmentPaymentBypassEnabled(isProduction = process.env.NODE_ENV === 'production') {
+  if (isProduction) {
+    return false;
+  }
+
   return parseBooleanValue(process.env.DEV_BYPASS_STRIPE_PAYMENT, false);
 }
 
@@ -601,11 +605,12 @@ export function createAppContext() {
     database: process.env.POSTGRES_DB || 'cafeteria_db',
   });
   const productStore = createProductStore();
-  const developmentPaymentBypassEnabled = isDevelopmentPaymentBypassEnabled();
+  const bypassRequestedInProduction = isProduction && parseBooleanValue(process.env.DEV_BYPASS_STRIPE_PAYMENT, false);
+  const developmentPaymentBypassEnabled = isDevelopmentPaymentBypassEnabled(isProduction);
   const stripeSecretKey = (process.env.STRIPE_SECRET_KEY || '').trim();
 
-  if (isProduction && developmentPaymentBypassEnabled) {
-    console.warn('DEV_BYPASS_STRIPE_PAYMENT esta activo en produccion. Los pagos se marcaran como pagados sin pasar por Stripe.');
+  if (bypassRequestedInProduction) {
+    console.warn('DEV_BYPASS_STRIPE_PAYMENT esta activo en produccion, pero se ignorara para no saltar Stripe.');
   }
 
   if (!stripeSecretKey) {

@@ -128,7 +128,7 @@ Esto afecta especialmente al modo `DEV_BYPASS_STRIPE_PAYMENT`:
 - Antes: el bypass podia terminar solo en memoria si el usuario no tenia UUID.
 - Ahora: el bypass intenta persistir tambien en base de datos local usando `orders` y `order_items`.
 - Solo se usa el fallback en memoria si la base de datos no esta disponible.
-- Si `DEV_BYPASS_STRIPE_PAYMENT=true`, el backend omite Stripe incluso si `NODE_ENV=production`. Esto es util para pruebas en entornos desplegados, pero no debe dejarse activo en produccion real.
+- Si `DEV_BYPASS_STRIPE_PAYMENT=true`, el backend omite Stripe solo fuera de `NODE_ENV=production`. En produccion se ignora para evitar saltar la pasarela de pago por accidente.
 
 El historial `GET /api/orders/my` y el detalle `GET /api/orders/:id` leen del mismo esquema en el que se persistio el pedido.
 
