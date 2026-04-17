@@ -116,6 +116,21 @@ El servidor arranca en [http://localhost:3000](http://localhost:3000) por defect
 - `POST /api/orders` — crear orden
 - `GET /api/orders/:id` — detalle de orden
 
+## Persistencia de pedidos
+
+El backend maneja ahora mismo dos rutas de persistencia para pedidos estandar:
+
+- Esquema principal: si el usuario autenticado tiene un ID UUID, el pedido se guarda en `pedidos` y `lineas_pedido`.
+- Esquema local legacy: si el usuario autenticado tiene un ID numerico, el pedido se guarda en `orders` y `order_items`.
+
+Esto afecta especialmente al modo `DEV_BYPASS_STRIPE_PAYMENT` en desarrollo:
+
+- Antes: el bypass podia terminar solo en memoria si el usuario no tenia UUID.
+- Ahora: el bypass intenta persistir tambien en base de datos local usando `orders` y `order_items`.
+- Solo se usa el fallback en memoria si la base de datos no esta disponible.
+
+El historial `GET /api/orders/my` y el detalle `GET /api/orders/:id` leen del mismo esquema en el que se persistio el pedido.
+
 (Implementar según necesidad del proyecto.)
 
 ## Migraciones y seeds

@@ -80,6 +80,6 @@
 
 ## Cambios ya hechos
 
-- [x] `backend/src/routes/orderRoutes.js` actualizado para usar `pedidos` y `lineas_pedido` en lugar de `orders` y `order_items`.
+- [x] `backend/src/routes/orderRoutes.js` actualizado para soportar `pedidos`/`lineas_pedido` con usuarios UUID y `orders`/`order_items` en el flujo local legacy y `dev bypass`.
 - [x] `backend/src/middleware/fraudPrevention.js` actualizado para consultar `pedidos` en lugar de `orders`.
 - [x] `backend/src/routes/adminRoutes.js` actualizado para construir la cola admin desde `pedidos` y `lineas_pedido`.

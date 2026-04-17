@@ -53,10 +53,51 @@ export function registerOrderRoutes(app, deps) {
       .map((order) => normalizeHistoricOrderEntry(order));
   }
 
+  // Entorno local legacy: usuarios con IDs numéricos persisten en orders/order_items.
+  // Esto evita que el dev bypass dependa de UUIDs o de la tabla pedidos.
+  async function createLegacyPaidOrderForUser(userId, validatedOrder, paymentMethod = 'dev-bypass') {
+    if (!pool) {
+      throw new Error('No hay base de datos local disponible para persistir el pedido');
+    }
+
+    const orderResult = await pool.query(
+      `INSERT INTO orders (user_id, status, total)
+       VALUES ($1, $2, $3)
+       RETURNING *`,
+      [userId, 'paid', validatedOrder.total],
+    );
+
+    const order = orderResult.rows[0];
+
+    for (const item of validatedOrder.items) {
+      await pool.query(
+        `INSERT INTO order_items (order_id, menu_item_id, quantity, price, notes)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [
+          order.id,
+          item.product_id,
+          item.quantity,
+          item.price,
+          item.notes || null,
+        ],
+      );
+    }
+
+    return {
+      ...order,
+      status: 'paid',
+      payment_method: paymentMethod,
+      amount_paid: validatedOrder.total,
+      paid_at: order.created_at,
+    };
+  }
+
   async function createPaidOrderForUser(userId, validatedOrder, paymentMethod = 'dev-bypass') {
     try {
+      // Supabase y el esquema real esperan UUIDs en pedidos.id_perfil/id_pagador.
+      // Si el usuario autenticado no tiene UUID, guardamos en el esquema local legacy.
       if (!isUuidLike(userId)) {
-        throw new Error('El esquema actual requiere identificadores UUID para guardar pedidos en la tabla pedidos');
+        return await createLegacyPaidOrderForUser(userId, validatedOrder, paymentMethod);
       }
 
       const client = supabase || {
@@ -137,10 +178,8 @@ export function registerOrderRoutes(app, deps) {
         status: 'paid',
       };
     } catch (error) {
+      // El array en memoria queda como ultimo recurso solo si la BD no esta disponible.
       if (developmentPaymentBypassEnabled && isLocalDatabaseUnavailable?.(error)) {
-        return createInMemoryPaidOrder(userId, validatedOrder, paymentMethod);
-      }
-      if (developmentPaymentBypassEnabled && /uuid/i.test(String(error?.message || ''))) {
         return createInMemoryPaidOrder(userId, validatedOrder, paymentMethod);
       }
       throw error;
@@ -239,13 +278,6 @@ export function registerOrderRoutes(app, deps) {
     }
 
     try {
-      if (developmentPaymentBypassEnabled && !isUuidLike(req.user.id)) {
-        const devOrders = getDevBypassOrdersForUser(req.user.id, status, limit);
-        if (devOrders.length > 0) {
-          return res.json({ orders: devOrders });
-        }
-      }
-
       if (supabase && isUuidLike(req.user.id)) {
         let query = supabase
           .from('pedidos')
@@ -302,6 +334,64 @@ export function registerOrderRoutes(app, deps) {
       }
 
       try {
+        if (!isUuidLike(req.user.id)) {
+          // Historial local para usuarios legacy: leer desde orders/order_items,
+          // que es donde tambien persiste el dev bypass en desarrollo.
+          const params = [String(req.user.id)];
+          let paramIndex = 2;
+          let query = `
+            SELECT
+              o.id,
+              o.status,
+              o.created_at,
+              o.total,
+              COUNT(oi.id) AS items_count,
+              COALESCE(
+                json_agg(
+                  json_build_object(
+                    'id', oi.id,
+                    'product_id', oi.menu_item_id,
+                    'product_name', COALESCE(mi.name, 'Producto'),
+                    'quantity', COALESCE(oi.quantity, 1),
+                    'price', COALESCE(oi.price, 0),
+                    'subtotal', COALESCE(oi.price, 0) * COALESCE(oi.quantity, 1),
+                    'notes', COALESCE(oi.notes, '')
+                  )
+                ) FILTER (WHERE oi.id IS NOT NULL),
+                '[]'::json
+              ) AS items
+            FROM orders o
+            LEFT JOIN order_items oi ON oi.order_id = o.id
+            LEFT JOIN menu_items mi ON mi.id = oi.menu_item_id
+            WHERE o.user_id::text = $1
+          `;
+
+          if (status) {
+            query += ` AND LOWER(COALESCE(o.status, '')) = ANY($${paramIndex})`;
+            params.push(normalizedStatuses);
+            paramIndex += 1;
+          }
+
+          query += `
+            GROUP BY o.id, o.status, o.created_at, o.total
+            ORDER BY o.created_at DESC
+            LIMIT $${paramIndex}
+          `;
+          params.push(limit);
+
+          const result = await pool.query(query, params);
+          return res.json({
+            orders: (result.rows || []).map((row) => normalizeHistoricOrderEntry({
+              id: row.id,
+              status: row.status,
+              created_at: row.created_at,
+              total: row.total,
+              items_count: row.items_count,
+              items: Array.isArray(row.items) ? row.items : [],
+            })),
+          });
+        }
+
         const params = [String(req.user.id)];
         let paramIndex = 2;
         let query = `
@@ -434,6 +524,61 @@ export function registerOrderRoutes(app, deps) {
       }
 
       try {
+        if (!isUuidLike(req.user.id)) {
+          // Detalle local para usuarios legacy: misma fuente persistida que el historial.
+          const params = [orderId];
+          let query = `
+            SELECT
+              o.id,
+              o.status,
+              o.created_at,
+              o.total,
+              COUNT(oi.id) AS items_count,
+              COALESCE(
+                json_agg(
+                  json_build_object(
+                    'id', oi.id,
+                    'product_id', oi.menu_item_id,
+                    'product_name', COALESCE(mi.name, 'Producto'),
+                    'quantity', COALESCE(oi.quantity, 1),
+                    'price', COALESCE(oi.price, 0),
+                    'subtotal', COALESCE(oi.price, 0) * COALESCE(oi.quantity, 1),
+                    'notes', COALESCE(oi.notes, '')
+                  )
+                ) FILTER (WHERE oi.id IS NOT NULL),
+                '[]'::json
+              ) AS items
+            FROM orders o
+            LEFT JOIN order_items oi ON oi.order_id = o.id
+            LEFT JOIN menu_items mi ON mi.id = oi.menu_item_id
+            WHERE o.id::text = $1
+          `;
+
+          if (req.user.role !== 'admin') {
+            params.push(String(req.user.id));
+            query += ` AND o.user_id::text = $2`;
+          }
+
+          query += `
+            GROUP BY o.id, o.status, o.created_at, o.total
+            LIMIT 1
+          `;
+
+          const orderResult = await pool.query(query, params);
+          const order = orderResult.rows[0];
+          if (!order) return res.status(404).json({ error: 'Pedido no encontrado' });
+          return res.json({
+            order: normalizeHistoricOrderEntry({
+              id: order.id,
+              status: order.status,
+              created_at: order.created_at,
+              total: order.total,
+              items_count: order.items_count,
+              items: Array.isArray(order.items) ? order.items : [],
+            }),
+          });
+        }
+
         const params = [orderId];
         let query = `
           SELECT
