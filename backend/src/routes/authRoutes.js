@@ -1,5 +1,6 @@
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import { resetUserPassword } from '../services/passwordResetService.js';
 
 export function registerAuthRoutes(app, deps) {
   const {
@@ -333,6 +334,43 @@ export function registerAuthRoutes(app, deps) {
         req,
       });
       return res.status(500).json({ error: 'Error al iniciar sesión' });
+    }
+  });
+
+  app.post('/api/auth/reset-password', async (req, res) => {
+    try {
+      const { email, birthDate, newPassword } = req.body;
+      const resetResult = await resetUserPassword({
+        email,
+        birthDate,
+        newPassword,
+        supabase,
+        pool,
+      });
+
+      await logSecurityEvent(supabase, {
+        userId: resetResult.userId,
+        actionType: 'password_reset_success',
+        severity: 'medium',
+        details: { email: resetResult.email },
+        req,
+      });
+
+      return res.json({
+        message: 'Contrasena restablecida correctamente. Ya puedes iniciar sesion.',
+      });
+    } catch (error) {
+      console.error('Error al restablecer contrasena:', error);
+      await logSecurityEvent(supabase, {
+        actionType: 'password_reset_failed',
+        severity: error.statusCode && error.statusCode < 500 ? 'low' : 'high',
+        details: { error: error.message, email: req.body?.email || null },
+        req,
+      });
+
+      return res.status(error.statusCode || 500).json({
+        error: error.statusCode ? error.message : 'Error al restablecer la contrasena',
+      });
     }
   });
 

@@ -63,6 +63,13 @@ export async function registerUser(userData) {
   }, { contentType: true });
 }
 
+export async function resetPassword(payload) {
+  return apiRequest('/api/auth/reset-password', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }, { contentType: true });
+}
+
 export async function getAllProducts() {
   return apiRequest('/api/products', {}, { auth: true });
 }

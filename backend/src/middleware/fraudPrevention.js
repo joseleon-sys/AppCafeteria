@@ -63,12 +63,12 @@ export async function calculateTrustScore(supabase, userId) {
     
     // Obtener pedidos completados
     const { data: orders } = await supabase
-      .from('orders')
-      .select('id, status')
-      .eq('user_id', userId);
+      .from('pedidos')
+      .select('id, estado, id_perfil, id_pagador')
+      .or(`id_perfil.eq.${userId},id_pagador.eq.${userId}`);
     
     if (orders) {
-      const completedOrders = orders.filter(o => o.status === 'completed' || o.status === 'paid');
+      const completedOrders = orders.filter((o) => ['pagado', 'completed', 'paid', 'completada'].includes(String(o.estado || '').toLowerCase()));
       score += Math.min(completedOrders.length * 5, 25); // Max +25 por pedidos
     }
     

@@ -8,6 +8,15 @@ API REST para la aplicación de cafetería. Stack: Node.js + Express + PostgreSQ
 - Docker y Docker Compose
 - npm o pnpm
 
+## Dependencias necesarias del backend
+
+El backend usa estas dependencias de `npm`:
+
+- Producción: `@supabase/supabase-js`, `bcryptjs`, `cors`, `dotenv`, `express`, `firebase-admin`, `jsonwebtoken`, `pg`, `stripe`
+- Desarrollo: `nodemon`
+
+Si aparece un error tipo `Cannot find package 'bcryptjs'`, significa que falta instalar las dependencias de `backend/`.
+
 ## Arrancar la base de datos (Docker)
 
 Desde la raíz del proyecto (`D:\CafeteriaSSG`), ejecuta:
@@ -73,6 +82,24 @@ Desde la carpeta `backend/`:
 cd backend
 npm install
 ```
+
+Si quieres una instalación limpia usando el lockfile:
+
+```powershell
+cd backend
+npm ci
+```
+
+## Verificación rápida
+
+Tras instalar dependencias, estos comandos deben funcionar:
+
+```powershell
+cd backend
+npm run dev
+```
+
+Si el problema era por paquetes no instalados, errores como `bcryptjs not found` o `pg not found` deberían desaparecer.
 
 ## Ejecutar el servidor de desarrollo
 

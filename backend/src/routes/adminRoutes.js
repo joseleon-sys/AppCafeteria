@@ -299,58 +299,89 @@ export function registerAdminRoutes(app, deps) {
     try {
       if (supabase) {
         const { data: orders, error } = await supabase
-          .from('child_orders')
-          .select('*, child:child_id(id, nombre, email)')
-          .in('status', ['pending', 'approved'])
-          .order('created_at', { ascending: false })
+          .from('pedidos')
+          .select(`
+            id,
+            estado,
+            fecha_creacion,
+            id_perfil,
+            perfiles:id_perfil (
+              id,
+              nombre_completo
+            ),
+            lineas_pedido (
+              id_producto_menu,
+              nombre_producto,
+              precio_compra,
+              notas,
+              productos_menu:id_producto_menu (
+                alergenos
+              )
+            )
+          `)
+          .in('estado', ['PENDIENTE', 'APROBADO'])
+          .order('fecha_creacion', { ascending: false })
           .limit(100);
 
         if (error) throw error;
 
-        const queue = await Promise.all((orders || []).map(async (order) => {
-          const { data: items, error: itemsError } = await supabase
-            .from('child_order_items')
-            .select('product_id, product_name, quantity, price, subtotal')
-            .eq('order_id', order.id);
-
-          if (itemsError) throw itemsError;
-
-          return buildOrderQueueEntry({
+        const queue = (orders || []).map((order) => buildOrderQueueEntry({
             id: order.id,
-            child_id: order.child_id,
-            child_name: order.child?.name || 'Sin nombre',
-            child_email: order.child?.email || null,
-            status: order.status,
-            notes: order.notes || '',
-            created_at: order.created_at,
-          }, items || []);
-        }));
+            child_id: order.id_perfil,
+            child_name: order.perfiles?.nombre_completo || 'Sin nombre',
+            child_email: null,
+            status: order.estado,
+            notes: '',
+            created_at: order.fecha_creacion,
+          }, (order.lineas_pedido || []).map((item) => ({
+            product_id: item.id_producto_menu,
+            product_name: item.nombre_producto,
+            quantity: 1,
+            price: item.precio_compra,
+            subtotal: item.precio_compra,
+            notes: item.notas || '',
+            allergens: parseJsonArray(item.productos_menu?.alergenos),
+          }))));
 
         return res.json({ orders: queue });
       }
 
       const ordersResult = await pool.query(
-        `SELECT co.id, co.child_id, co.status, co.notes, co.created_at,
-                u.nombre AS child_name, u.email AS child_email
-         FROM child_orders co
-         LEFT JOIN users u ON u.id = co.child_id
-         WHERE co.status IN ('pending', 'approved')
-         ORDER BY co.created_at DESC
+        `SELECT p.id, p.id_perfil, p.estado, p.fecha_creacion,
+                perf.nombre_completo AS child_name
+         FROM pedidos p
+         LEFT JOIN perfiles perf ON perf.id = p.id_perfil
+         WHERE p.estado IN ('PENDIENTE', 'APROBADO')
+         ORDER BY p.fecha_creacion DESC
          LIMIT 100`,
       );
 
       const queue = await Promise.all((ordersResult.rows || []).map(async (order) => {
         const itemsResult = await pool.query(
-          `SELECT coi.product_id, coi.product_name, coi.quantity, coi.price, coi.subtotal, coi.notes, mi.alergenos AS allergens
-           FROM child_order_items coi
-           LEFT JOIN productos_menu mi ON mi.id = coi.product_id
-           WHERE coi.order_id = $1
-           ORDER BY coi.id ASC`,
+          `SELECT lp.id_producto_menu AS product_id,
+                  lp.nombre_producto AS product_name,
+                  1 AS quantity,
+                  lp.precio_compra AS price,
+                  lp.precio_compra AS subtotal,
+                  lp.notas AS notes,
+                  mi.alergenos AS allergens
+           FROM lineas_pedido lp
+           LEFT JOIN productos_menu mi ON mi.id = lp.id_producto_menu
+           WHERE lp.id_pedido = $1
+           ORDER BY lp.id ASC`,
           [order.id],
         );
 
         const enrichedItems = (itemsResult.rows || []).map((item) => ({ ...item, allergens: parseJsonArray(item.allergens) }));
-        return buildOrderQueueEntry(order, enrichedItems);
+        return buildOrderQueueEntry({
+          id: order.id,
+          child_id: order.id_perfil,
+          child_name: order.child_name || 'Sin nombre',
+          child_email: null,
+          status: order.estado,
+          notes: '',
+          created_at: order.fecha_creacion,
+        }, enrichedItems);
       }));
 
       return res.json({ orders: queue });

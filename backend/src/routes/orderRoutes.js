@@ -54,8 +54,57 @@ export function registerOrderRoutes(app, deps) {
   }
 
   async function createPaidOrderForUser(userId, validatedOrder, paymentMethod = 'dev-bypass') {
-    if (supabase && isUuidLike(userId)) {
-      const { data: order, error: orderError } = await supabase
+    try {
+      if (!isUuidLike(userId)) {
+        throw new Error('El esquema actual requiere identificadores UUID para guardar pedidos en la tabla pedidos');
+      }
+
+      const client = supabase || {
+        from(tableName) {
+          return {
+            insert: async (payload) => {
+              if (tableName === 'pedidos') {
+                const result = await pool.query(
+                  `INSERT INTO pedidos (id_perfil, id_pagador, estado, id_pasarela_pago)
+                   VALUES ($1, $2, $3, $4)
+                   RETURNING *`,
+                  [payload.id_perfil, payload.id_pagador, payload.estado, payload.id_pasarela_pago],
+                );
+                return {
+                  select() {
+                    return {
+                      single: async () => ({ data: result.rows[0], error: null }),
+                    };
+                  },
+                };
+              }
+
+              if (tableName === 'lineas_pedido') {
+                for (const item of payload) {
+                  await pool.query(
+                    `INSERT INTO lineas_pedido (
+                      id_pedido, id_producto_menu, nombre_producto, precio_compra, notas, opciones_elegidas
+                    ) VALUES ($1, $2, $3, $4, $5, $6::jsonb)`,
+                    [
+                      item.id_pedido,
+                      item.id_producto_menu,
+                      item.nombre_producto,
+                      item.precio_compra,
+                      item.notas,
+                      JSON.stringify(item.opciones_elegidas || {}),
+                    ],
+                  );
+                }
+                return { error: null };
+              }
+
+              throw new Error(`Tabla no soportada en adaptador local: ${tableName}`);
+            },
+          };
+        },
+      };
+
+      const { data: order, error: orderError } = await client
         .from('pedidos')
         .insert({
           id_perfil: userId,
@@ -68,45 +117,30 @@ export function registerOrderRoutes(app, deps) {
 
       if (orderError) throw orderError;
 
-      const itemsToInsert = validatedOrder.items.map((item) => ({
-        id_pedido: order.id,
-        id_producto_menu: item.product_id,
-        nombre_producto: item.product_name,
-        precio_compra: item.price,
-        notas: item.notes || null,
-        opciones_elegidas: {},
-      }));
+      const itemsToInsert = validatedOrder.items.flatMap((item) => {
+        const quantity = Number.parseInt(item.quantity, 10) || 1;
+        return Array.from({ length: quantity }, () => ({
+          id_pedido: order.id,
+          id_producto_menu: item.product_id,
+          nombre_producto: item.product_name,
+          precio_compra: item.price,
+          notas: item.notes || null,
+          opciones_elegidas: {},
+        }));
+      });
 
-      const { error: itemsError } = await supabase.from('lineas_pedido').insert(itemsToInsert);
+      const { error: itemsError } = await client.from('lineas_pedido').insert(itemsToInsert);
       if (itemsError) throw itemsError;
 
       return {
         ...order,
         status: 'paid',
       };
-    }
-
-    try {
-      const orderResult = await pool.query(
-        `INSERT INTO orders (user_id, status, total, payment_method, amount_paid, paid_at)
-         VALUES ($1, $2, $3, $4, $5, NOW())
-         RETURNING *`,
-        [userId, 'paid', validatedOrder.total, paymentMethod, validatedOrder.total],
-      );
-
-      const order = orderResult.rows[0];
-
-      for (const item of validatedOrder.items) {
-        await pool.query(
-          `INSERT INTO order_items (order_id, menu_item_id, quantity, price, notes)
-           VALUES ($1, $2, $3, $4, $5)`,
-          [order.id, item.product_id, item.quantity, item.price, item.notes || null],
-        );
-      }
-
-      return order;
     } catch (error) {
       if (developmentPaymentBypassEnabled && isLocalDatabaseUnavailable?.(error)) {
+        return createInMemoryPaidOrder(userId, validatedOrder, paymentMethod);
+      }
+      if (developmentPaymentBypassEnabled && /uuid/i.test(String(error?.message || ''))) {
         return createInMemoryPaidOrder(userId, validatedOrder, paymentMethod);
       }
       throw error;
@@ -261,15 +295,7 @@ export function registerOrderRoutes(app, deps) {
         return res.json({ orders });
       }
 
-      const pedidosTableExists = await pool.query(
-        `SELECT EXISTS (
-           SELECT 1
-           FROM information_schema.tables
-           WHERE table_schema = 'public' AND table_name = 'pedidos'
-         ) AS exists`,
-      );
-
-      if (pedidosTableExists.rows[0]?.exists) {
+      try {
         const params = [String(req.user.id)];
         let paramIndex = 2;
         let query = `
@@ -322,34 +348,6 @@ export function registerOrderRoutes(app, deps) {
             items: Array.isArray(row.items) ? row.items : [],
           })),
         });
-      }
-
-      if (status) {
-        const params = [req.user.id, status, limit];
-        const query = 'SELECT * FROM orders WHERE user_id = $1 AND status = $2 ORDER BY created_at DESC LIMIT $3';
-        try {
-          const result = await pool.query(query, params);
-          const ordersWithCounts = await Promise.all((result.rows || []).map(async (order) => {
-            const itemsResult = await pool.query('SELECT COUNT(*) AS count FROM order_items WHERE order_id = $1', [order.id]);
-            return { ...order, items_count: Number.parseInt(itemsResult.rows[0]?.count, 10) || 0 };
-          }));
-          return res.json({ orders: ordersWithCounts });
-        } catch (error) {
-          if (developmentPaymentBypassEnabled && isLocalDatabaseUnavailable?.(error)) {
-            return res.json({ orders: getDevBypassOrdersForUser(req.user.id, status, limit) });
-          }
-          throw error;
-        }
-      }
-
-      try {
-        const result = await pool.query('SELECT * FROM orders WHERE user_id = $1 ORDER BY created_at DESC LIMIT $2', [req.user.id, limit]);
-        const ordersWithCounts = await Promise.all((result.rows || []).map(async (order) => {
-          const itemsResult = await pool.query('SELECT COUNT(*) AS count FROM order_items WHERE order_id = $1', [order.id]);
-          return { ...order, items_count: Number.parseInt(itemsResult.rows[0]?.count, 10) || 0 };
-        }));
-
-        return res.json({ orders: ordersWithCounts });
       } catch (error) {
         if (developmentPaymentBypassEnabled && isLocalDatabaseUnavailable?.(error)) {
           return res.json({ orders: getDevBypassOrdersForUser(req.user.id, null, limit) });
@@ -429,15 +427,7 @@ export function registerOrderRoutes(app, deps) {
         });
       }
 
-      const pedidosTableExists = await pool.query(
-        `SELECT EXISTS (
-           SELECT 1
-           FROM information_schema.tables
-           WHERE table_schema = 'public' AND table_name = 'pedidos'
-         ) AS exists`,
-      );
-
-      if (pedidosTableExists.rows[0]?.exists) {
+      try {
         const params = [orderId];
         let query = `
           SELECT
@@ -478,7 +468,6 @@ export function registerOrderRoutes(app, deps) {
         const orderResult = await pool.query(query, params);
         const order = orderResult.rows[0];
         if (!order) return res.status(404).json({ error: 'Pedido no encontrado' });
-
         return res.json({
           order: normalizeHistoricOrderEntry({
             id: order.id,
@@ -489,30 +478,6 @@ export function registerOrderRoutes(app, deps) {
             items: Array.isArray(order.items) ? order.items : [],
           }),
         });
-      }
-
-      const numericOrderId = Number.parseInt(orderId, 10);
-      if (Number.isNaN(numericOrderId)) {
-        const devOrder = devBypassOrders.find((order) => String(order.id) === orderId && String(order.user_id) === String(req.user.id));
-        if (devOrder) return res.json({ order: normalizeHistoricOrderEntry(devOrder) });
-        return res.status(400).json({ error: 'ID de pedido invalido' });
-      }
-
-      const params = [numericOrderId];
-      let query = 'SELECT * FROM orders WHERE id = $1';
-
-      if (req.user.role !== 'admin') {
-        params.push(req.user.id);
-        query += ` AND user_id = $${params.length}`;
-      }
-
-      try {
-        const orderResult = await pool.query(query, params);
-        const order = orderResult.rows[0];
-        if (!order) return res.status(404).json({ error: 'Pedido no encontrado' });
-
-        const itemsResult = await pool.query('SELECT * FROM order_items WHERE order_id = $1 ORDER BY id ASC', [order.id]);
-        return res.json({ order: { ...order, items: itemsResult.rows || [] } });
       } catch (error) {
         if (developmentPaymentBypassEnabled && isLocalDatabaseUnavailable?.(error)) {
           const devOrder = devBypassOrders.find((order) => String(order.id) === orderId && String(order.user_id) === String(req.user.id));

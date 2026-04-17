@@ -54,6 +54,22 @@ Aplicación móvil de cafetería escolar donde:
 | **BD Primary** | Supabase (PostgreSQL) |
 | **BD Fallback** | PostgreSQL local |
 
+### Dependencias de ejecución
+- `frontend/`: `react`, `react-dom`, `@ionic/react`, `ionicons`, `@capacitor/*`, `vite`
+- `backend/`: `express`, `pg`, `bcryptjs`, `jsonwebtoken`, `dotenv`, `cors`, `@supabase/supabase-js`, `firebase-admin`, `stripe`
+
+### Instalación rápida de dependencias
+```bash
+cd backend && npm install
+cd ../frontend && npm install
+```
+
+Si prefieres instalaciones reproducibles con lockfile:
+```bash
+cd backend && npm ci
+cd ../frontend && npm ci
+```
+
 ### Estado Actual
 - ✅ Sistema padre-hijo completo (vinculación, aprobación)
 - ✅ FASE 3: Pedidos de hijos (crear, aprobar, pagar, rechazar)

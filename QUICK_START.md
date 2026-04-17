@@ -8,11 +8,36 @@
 
 ## ⚡ 5 Minutos: Setup Inicial
 
-### 1️⃣ Backend
+### 0️⃣ Instalar dependencias del monorepo
+
+Este proyecto tiene dependencias separadas para `backend/` y `frontend/`. Hay que instalarlas en ambas carpetas.
 
 ```bash
 cd backend
 npm install
+
+cd ../frontend
+npm install
+```
+
+Si quieres respetar exactamente los `package-lock.json`, usa:
+
+```bash
+cd backend
+npm ci
+
+cd ../frontend
+npm ci
+```
+
+**Errores típicos que esto corrige:**
+- `Cannot find package 'bcryptjs'` → faltan dependencias de `backend/`
+- `vite: not found` → faltan dependencias de `frontend/`
+
+### 1️⃣ Backend
+
+```bash
+cd backend
 npm run dev
 ```
 
@@ -26,7 +51,6 @@ npm run dev
 
 ```bash
 cd frontend
-npm install
 npm run dev
 ```
 
@@ -244,8 +268,8 @@ VITE_API_URL=http://localhost:3000
 
 ## ✅ Checklist de Setup
 
-- [ ] Backend instalado (npm install)
-- [ ] Frontend instalado (npm install)
+- [ ] Backend instalado (`cd backend && npm install` o `npm ci`)
+- [ ] Frontend instalado (`cd frontend && npm install` o `npm ci`)
 - [ ] Base de datos setup (Supabase o PostgreSQL)
 - [ ] `.env` configurado en backend
 - [ ] `JWT_SECRET` configurado
@@ -258,6 +282,36 @@ VITE_API_URL=http://localhost:3000
 ---
 
 ## 🐛 Troubleshooting
+
+### Error: `vite: not found`
+
+Faltan dependencias del frontend:
+
+```bash
+cd frontend
+npm install
+```
+
+### Error: `Cannot find package 'bcryptjs'`
+
+Faltan dependencias del backend:
+
+```bash
+cd backend
+npm install
+```
+
+### Error: `Cannot find module` o paquetes ausentes
+
+Reinstala dependencias del subproyecto afectado:
+
+```bash
+cd backend
+npm install
+
+cd ../frontend
+npm install
+```
 
 ### Error: "JWT_SECRET is required in production"
 

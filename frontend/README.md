@@ -7,6 +7,15 @@ Aplicación móvil/web con Ionic React para la cafetería.
 - Node.js 18+ (recomendado LTS)
 - npm o pnpm
 
+## Dependencias necesarias del frontend
+
+El frontend usa estas dependencias de `npm`:
+
+- Producción: `react`, `react-dom`, `@ionic/react`, `ionicons`, `@capacitor/core`, `@capacitor/android`, `@capacitor/ios`, `@capacitor/push-notifications`
+- Desarrollo: `vite`
+
+Si aparece un error tipo `vite: not found`, significa que falta instalar las dependencias de `frontend/`.
+
 ## Instalar dependencias
 
 Desde la carpeta `frontend/`:
@@ -16,6 +25,13 @@ cd frontend
 npm install
 ```
 
+Si prefieres instalar exactamente lo fijado en `package-lock.json`:
+
+```powershell
+cd frontend
+npm ci
+```
+
 ## Ejecutar en modo desarrollo
 
 ```powershell
@@ -23,6 +39,18 @@ npm run dev
 ```
 
 La aplicación arranca en [http://localhost:5173](http://localhost:5173) (Vite default).
+
+## Verificación rápida
+
+Después de instalar dependencias, estos comandos deben funcionar:
+
+```powershell
+cd frontend
+npm run dev
+npm run build
+```
+
+Si faltaban paquetes, el error `vite not found` debería desaparecer.
 
 ## Ejecutar como aplicación Ionic (con recarga en vivo)
 
