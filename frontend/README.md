@@ -64,7 +64,16 @@ Crea un archivo `.env` en la carpeta `frontend/` con:
 
 ```env
 VITE_API_URL=http://localhost:3000
+VITE_SENTRY_DSN=https://tu-dsn@sentry.io/proyecto
+VITE_SENTRY_ENVIRONMENT=development
+VITE_SENTRY_RELEASE=cafeteria-frontend@0.1.0
+VITE_SENTRY_TRACES_SAMPLE_RATE=0.1
+VITE_SENTRY_REPLAY_SESSION_SAMPLE_RATE=0
+VITE_SENTRY_REPLAY_ERROR_SAMPLE_RATE=1
+VITE_SENTRY_ENABLED=true
 ```
+
+Si `VITE_SENTRY_DSN` esta vacio, Sentry queda desactivado. Session Replay esta configurado para enmascarar texto y bloquear media por privacidad.
 
 Ejemplo de uso en React:
 

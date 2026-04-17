@@ -28,6 +28,8 @@ import {
   markNotificationAsRead,
   sendPushToUser,
 } from './services/notificationService.js';
+import { Sentry, captureServerResponse, initSentry, isSentryEnabled } from './observability/sentry.js';
+import { createHttpLogger } from './observability/httpLogger.js';
 
 const { Pool } = pkg;
 
@@ -586,6 +588,8 @@ function transformProducto(supabaseProduct) {
 }
 
 export function createAppContext() {
+  initSentry();
+
   const app = express();
   const PORT = process.env.PORT || 3000;
   const isProduction = process.env.NODE_ENV === 'production';
@@ -642,6 +646,11 @@ export function createAppContext() {
 
   app.use(cors());
   app.use(express.json());
+  app.use(createHttpLogger());
+  app.use((req, res, next) => {
+    res.on('finish', () => captureServerResponse(req, res));
+    next();
+  });
   app.use((req, res, next) => {
     req.supabase = supabase;
     next();
@@ -654,6 +663,9 @@ export function createAppContext() {
     jwt.verify(token, JWT_SECRET, (err, user) => {
       if (err) return res.status(403).json({ error: 'Token inválido' });
       req.user = user;
+      if (isSentryEnabled() && user?.id) {
+        Sentry.setUser({ id: String(user.id), role: user.role });
+      }
       next();
     });
   }
@@ -929,6 +941,7 @@ export function createAppContext() {
     deactivateDeviceToken,
     listUserNotifications,
     markNotificationAsRead,
+    isSentryEnabled,
     parseJsonArray,
     parseJsonObject,
     parseBooleanValue,

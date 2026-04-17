@@ -109,6 +109,30 @@ npm run dev
 
 El servidor arranca en [http://localhost:3000](http://localhost:3000) por defecto.
 
+## Observabilidad: Sentry y ELK
+
+El backend ya incluye instrumentacion para Sentry y logs JSON compatibles con Logstash/Elastic.
+
+Variables recomendadas en `backend/.env`:
+
+```env
+SENTRY_DSN=https://tu-dsn@sentry.io/proyecto
+SENTRY_ENVIRONMENT=development
+SENTRY_RELEASE=cafeteria-backend@1.0.0
+SENTRY_TRACES_SAMPLE_RATE=0.1
+SENTRY_ENABLED=true
+
+LOG_LEVEL=info
+LOGSTASH_TCP_URL=localhost:5000
+```
+
+Notas:
+
+- Si `SENTRY_DSN` esta vacio, Sentry queda desactivado sin romper el arranque.
+- Los logs HTTP salen en JSON por stdout y, si `LOGSTASH_TCP_URL` esta definido, tambien se envian a Logstash por TCP.
+- Los campos sensibles como `authorization`, cookies, passwords y tokens se redactan.
+- `GET /api/health` informa si Sentry esta activo y que los logs estan en formato JSON.
+
 ## Endpoints de ejemplo
 
 - `GET /api/health` — healthcheck
