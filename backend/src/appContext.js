@@ -108,7 +108,7 @@ function parseBooleanValue(value, defaultValue = true) {
 }
 
 function isDevelopmentPaymentBypassEnabled() {
-  return process.env.NODE_ENV !== 'production' && parseBooleanValue(process.env.DEV_BYPASS_STRIPE_PAYMENT, false);
+  return parseBooleanValue(process.env.DEV_BYPASS_STRIPE_PAYMENT, false);
 }
 
 function inferTechnicalFromName(name, category) {
@@ -603,6 +603,10 @@ export function createAppContext() {
   const productStore = createProductStore();
   const developmentPaymentBypassEnabled = isDevelopmentPaymentBypassEnabled();
   const stripeSecretKey = (process.env.STRIPE_SECRET_KEY || '').trim();
+
+  if (isProduction && developmentPaymentBypassEnabled) {
+    console.warn('DEV_BYPASS_STRIPE_PAYMENT esta activo en produccion. Los pagos se marcaran como pagados sin pasar por Stripe.');
+  }
 
   if (!stripeSecretKey) {
     if (isProduction && !developmentPaymentBypassEnabled) {
