@@ -107,8 +107,21 @@ function parseBooleanValue(value, defaultValue = true) {
   return Boolean(value);
 }
 
-function isDevelopmentPaymentBypassEnabled(isProduction = process.env.NODE_ENV === 'production') {
-  if (isProduction) {
+function isHostedDeployment() {
+  return Boolean(
+    process.env.RAILWAY_ENVIRONMENT ||
+    process.env.RAILWAY_ENVIRONMENT_NAME ||
+    process.env.RAILWAY_PROJECT_ID ||
+    process.env.RAILWAY_SERVICE_ID ||
+    process.env.RAILWAY_STATIC_URL,
+  );
+}
+
+function isDevelopmentPaymentBypassEnabled({
+  isProduction = process.env.NODE_ENV === 'production',
+  isHosted = isHostedDeployment(),
+} = {}) {
+  if (isProduction || isHosted) {
     return false;
   }
 
@@ -576,6 +589,7 @@ export function createAppContext() {
   const app = express();
   const PORT = process.env.PORT || 3000;
   const isProduction = process.env.NODE_ENV === 'production';
+  const isHosted = isHostedDeployment();
   const JWT_SECRET = process.env.JWT_SECRET || (!isProduction ? randomBytes(32).toString('hex') : null);
 
   if (!process.env.JWT_SECRET) {
@@ -605,17 +619,17 @@ export function createAppContext() {
     database: process.env.POSTGRES_DB || 'cafeteria_db',
   });
   const productStore = createProductStore();
-  const bypassRequestedInProduction = isProduction && parseBooleanValue(process.env.DEV_BYPASS_STRIPE_PAYMENT, false);
-  const developmentPaymentBypassEnabled = isDevelopmentPaymentBypassEnabled(isProduction);
+  const bypassRequestedInDisabledEnvironment = (isProduction || isHosted) && parseBooleanValue(process.env.DEV_BYPASS_STRIPE_PAYMENT, false);
+  const developmentPaymentBypassEnabled = isDevelopmentPaymentBypassEnabled({ isProduction, isHosted });
   const stripeSecretKey = (process.env.STRIPE_SECRET_KEY || '').trim();
 
-  if (bypassRequestedInProduction) {
-    console.warn('DEV_BYPASS_STRIPE_PAYMENT esta activo en produccion, pero se ignorara para no saltar Stripe.');
+  if (bypassRequestedInDisabledEnvironment) {
+    console.warn('DEV_BYPASS_STRIPE_PAYMENT esta activo en produccion/Railway, pero se ignorara para no saltar Stripe.');
   }
 
   if (!stripeSecretKey) {
-    if (isProduction && !developmentPaymentBypassEnabled) {
-      throw new Error('STRIPE_SECRET_KEY es obligatorio cuando Stripe esta habilitado');
+    if ((isProduction || isHosted) && !developmentPaymentBypassEnabled) {
+      throw new Error('STRIPE_SECRET_KEY es obligatorio en produccion/Railway para no saltar la pasarela de pago');
     }
     console.warn('STRIPE_SECRET_KEY no configurado. Stripe quedara deshabilitado hasta definir la clave.');
   }
