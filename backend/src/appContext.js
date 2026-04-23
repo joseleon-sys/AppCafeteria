@@ -872,10 +872,17 @@ export function createAppContext() {
   }
 
   async function startServer() {
-    app.listen(PORT, async () => {
+    app.listen(PORT, () => {
       console.log(`Servidor corriendo en http://localhost:${PORT}`);
-      const productSummary = await getActiveProductSummary();
-      console.log(`Productos disponibles (${productSummary.source}): ${productSummary.count}`);
+
+      void (async () => {
+        try {
+          const productSummary = await getActiveProductSummary();
+          console.log(`Productos disponibles (${productSummary.source}): ${productSummary.count}`);
+        } catch (error) {
+          console.error('No se pudo obtener el resumen inicial de productos:', error);
+        }
+      })();
     });
   }
 

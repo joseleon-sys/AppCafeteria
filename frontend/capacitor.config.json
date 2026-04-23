@@ -1,0 +1,6 @@
+{
+  "appId": "com.cafeteriassg.app",
+  "appName": "AppCafeteria",
+  "webDir": "dist",
+  "bundledWebRuntime": false
+}
