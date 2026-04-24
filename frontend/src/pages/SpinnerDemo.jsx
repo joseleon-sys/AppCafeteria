@@ -1,3 +1,4 @@
+// Pagina de demostracion para probar visualmente el spinner personalizado.
 import React from "react";
 import HamsterSpinner from "../components/HamsterSpinner";
 import "../components/HamsterSpinner.css";

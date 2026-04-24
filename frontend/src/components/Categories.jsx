@@ -1,3 +1,4 @@
+// Selector visual de categorias y subcategorias del catalogo.
 
 import React, { useState } from "react";
 import './Categories.css';
@@ -78,4 +79,3 @@ export default function Categories({ onCategoryChange, onSubcategoryChange }) {
     </div>
   );
 }
-

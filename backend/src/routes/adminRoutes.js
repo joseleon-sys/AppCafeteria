@@ -1,17 +1,20 @@
+// Rutas reservadas para administradores: estadisticas, fraude, usuarios y gestion operativa.
 export function registerAdminRoutes(app, deps) {
   const {
     supabase,
-    authenticateToken,
+    autenticarToken,
     requireAdmin,
-    buildOrderQueueEntry,
-    parseJsonArray,
+    construirEntradaColaPedidos,
+    parsearArrayJson,
   } = deps;
 
   function requireSupabase(res) {
+    // Respuesta comun cuando falta la conexion principal a la base de datos.
     return res.status(503).json({ error: 'Supabase no esta configurado en el backend' });
   }
 
-  app.get('/api/admin/statistics', authenticateToken, requireAdmin, async (req, res) => {
+  app.get('/api/admin/statistics', autenticarToken, requireAdmin, async (req, res) => {
+    // Resume datos globales para panel de administracion.
     if (!supabase) return requireSupabase(res);
 
     try {
@@ -60,7 +63,8 @@ export function registerAdminRoutes(app, deps) {
     }
   });
 
-  app.get('/api/admin/fraud-log', authenticateToken, requireAdmin, async (req, res) => {
+  app.get('/api/admin/fraud-log', autenticarToken, requireAdmin, async (req, res) => {
+    // Devuelve los ultimos eventos registrados por el sistema antifraude.
     if (!supabase) return requireSupabase(res);
 
     try {
@@ -78,13 +82,14 @@ export function registerAdminRoutes(app, deps) {
     }
   });
 
-  app.get('/api/admin/users', authenticateToken, requireAdmin, async (req, res) => {
+  app.get('/api/admin/users', autenticarToken, requireAdmin, async (req, res) => {
+    // Lista usuarios y algunos datos derivados utiles para gestion.
     if (!supabase) return requireSupabase(res);
 
     try {
       const { data: users, error } = await supabase
         .from('users')
-        .select('id, email, nombre, role, is_adult, created_at, blocked');
+        .select('id, email, nombre, role, is_adult, created_at, bloqueado');
 
       if (error) throw error;
 
@@ -109,7 +114,7 @@ export function registerAdminRoutes(app, deps) {
           role: user.role,
           is_adult: user.is_adult,
           created_at: user.created_at,
-          blocked: user.blocked || false,
+          bloqueado: user.bloqueado || false,
           children_count: childrenByParent[String(user.id)] || 0,
         })),
       });
@@ -119,19 +124,20 @@ export function registerAdminRoutes(app, deps) {
     }
   });
 
-  app.put('/api/admin/users/:id/block', authenticateToken, requireAdmin, async (req, res) => {
+  app.put('/api/admin/users/:id/block', autenticarToken, requireAdmin, async (req, res) => {
+    // Permite bloquear o desbloquear cuentas de usuario.
     if (!supabase) return requireSupabase(res);
 
     const { id } = req.params;
-    const { blocked } = req.body || {};
+    const { bloqueado } = req.body || {};
 
     try {
-      const { data, error } = await supabase.from('users').update({ blocked: blocked || false }).eq('id', id).select();
+      const { data, error } = await supabase.from('users').update({ bloqueado: bloqueado || false }).eq('id', id).select();
       if (error) throw error;
       if (!data || data.length === 0) return res.status(404).json({ error: 'Usuario no encontrado' });
 
       return res.json({
-        message: `Usuario ${blocked ? 'bloqueado' : 'desbloqueado'} correctamente`,
+        message: `Usuario ${bloqueado ? 'bloqueado' : 'desbloqueado'} correctamente`,
         user: data[0],
       });
     } catch (error) {
@@ -140,7 +146,7 @@ export function registerAdminRoutes(app, deps) {
     }
   });
 
-  app.put('/api/admin/users/:id', authenticateToken, requireAdmin, async (req, res) => {
+  app.put('/api/admin/users/:id', autenticarToken, requireAdmin, async (req, res) => {
     if (!supabase) return requireSupabase(res);
 
     const { id } = req.params;
@@ -164,7 +170,7 @@ export function registerAdminRoutes(app, deps) {
     }
   });
 
-  app.delete('/api/admin/users/:id', authenticateToken, requireAdmin, async (req, res) => {
+  app.delete('/api/admin/users/:id', autenticarToken, requireAdmin, async (req, res) => {
     if (!supabase) return requireSupabase(res);
 
     const { id } = req.params;
@@ -179,7 +185,7 @@ export function registerAdminRoutes(app, deps) {
     }
   });
 
-  app.get('/api/admin/orders/queue', authenticateToken, requireAdmin, async (req, res) => {
+  app.get('/api/admin/orders/queue', autenticarToken, requireAdmin, async (req, res) => {
     if (!supabase) return requireSupabase(res);
 
     try {
@@ -210,7 +216,7 @@ export function registerAdminRoutes(app, deps) {
 
       if (error) throw error;
 
-      const queue = (orders || []).map((order) => buildOrderQueueEntry({
+      const queue = (orders || []).map((order) => construirEntradaColaPedidos({
         id: order.id,
         child_id: order.id_perfil,
         child_name: order.perfiles?.nombre_completo || 'Sin nombre',
@@ -225,7 +231,7 @@ export function registerAdminRoutes(app, deps) {
         price: item.precio_compra,
         subtotal: item.precio_compra,
         notes: item.notas || '',
-        allergens: parseJsonArray(item.productos_menu?.alergenos),
+        allergens: parsearArrayJson(item.productos_menu?.alergenos),
       }))));
 
       return res.json({ orders: queue });

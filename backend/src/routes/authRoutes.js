@@ -1,84 +1,98 @@
+// Rutas de autenticacion, perfil basico, sesion y notificaciones del usuario.
 import bcrypt from 'bcryptjs';
-import jwt from 'jsonwebtoken';
-import { resetUserPassword } from '../services/passwordResetService.js';
+import { restablecerContrasenaUsuario } from '../services/passwordResetService.js';
+import { construirUsuarioPublico, registrarFalloValidacionAuth, firmarTokenAuth } from '../utils/utilidadesAuth.js';
 
 export function registerAuthRoutes(app, deps) {
   const {
     supabase,
     JWT_SECRET,
-    authenticateToken,
+    autenticarToken,
     registrationRateLimiter,
     loginRateLimiter,
     resetLoginAttempts,
     getClientIP,
     logSecurityEvent,
     calculateTrustScore,
-    registerDeviceToken,
-    deactivateDeviceToken,
-    listUserNotifications,
-    markNotificationAsRead,
-    normalizeSpecialCode,
-    normalizeFavoriteIds,
-    parsePositiveInteger,
-    formatFullName,
-    calculateAge,
-    ensureProfileForAppUser,
-    resolveProfileIdForUser,
-    generateParentToken,
-    isValidFullName,
-    normalizeAlias,
-    isValidAlias,
-    isValidSpecialCode,
+    registrarTokenDispositivo,
+    desactivarTokenDispositivo,
+    listarNotificacionesUsuario,
+    marcarNotificacionComoLeida,
+    normalizarCodigoEspecial,
+    normalizarIdsFavoritos,
+    parsearEnteroPositivo,
+    formatearNombreCompleto,
+    calcularEdad,
+    asegurarPerfilParaUsuarioApp,
+    resolverIdPerfilParaUsuario,
+    generarTokenPadre,
+    esNombreCompletoValido,
+    normalizarAlias,
+    esAliasValido,
+    esCodigoEspecialValido,
   } = deps;
 
   function requireSupabase(res) {
+    // Pequeña ayuda para responder siempre igual cuando falta Supabase.
     return res.status(503).json({ error: 'Supabase no esta configurado en el backend' });
   }
 
+  function usuarioPublico(user, extraData = {}) {
+    // Envoltorio local para dejar clara la intencion al devolver usuarios al frontend.
+    return construirUsuarioPublico(user, extraData);
+  }
+
   app.post('/api/auth/register', registrationRateLimiter, async (req, res) => {
+    // Registro de usuarios nuevos con validaciones basicas y asignacion de rol inicial.
     if (!supabase) return requireSupabase(res);
 
     try {
       const { email, password, name, birthDate } = req.body;
-      const formattedName = formatFullName(name);
+      const formattedName = formatearNombreCompleto(name);
 
       if (!email || !password || !formattedName || !birthDate) {
-        await logSecurityEvent(supabase, {
+        await registrarFalloValidacionAuth({
+          supabase,
+          logSecurityEvent,
           actionType: 'registration_failed_validation',
-          severity: 'low',
-          details: { reason: 'missing_fields', email },
+          reason: 'missing_fields',
+          email,
           req,
         });
         return res.status(400).json({ error: 'Faltan campos requeridos' });
       }
 
-      if (!isValidFullName(formattedName)) {
-        await logSecurityEvent(supabase, {
+      if (!esNombreCompletoValido(formattedName)) {
+        await registrarFalloValidacionAuth({
+          supabase,
+          logSecurityEvent,
           actionType: 'registration_failed_validation',
-          severity: 'low',
-          details: { reason: 'invalid_full_name', email },
+          reason: 'invalid_full_name',
+          email,
           req,
         });
         return res.status(400).json({ error: 'Debes introducir nombre y apellidos con formato válido' });
       }
 
       if (password.length < 6) {
-        await logSecurityEvent(supabase, {
+        await registrarFalloValidacionAuth({
+          supabase,
+          logSecurityEvent,
           actionType: 'registration_failed_validation',
-          severity: 'low',
-          details: { reason: 'weak_password', email },
+          reason: 'weak_password',
+          email,
           req,
         });
         return res.status(400).json({ error: 'La contraseña debe tener al menos 6 caracteres' });
       }
 
-      const age = calculateAge(birthDate);
+      const age = calcularEdad(birthDate);
       const isAdult = age >= 18;
       const role = isAdult ? 'customer' : 'child';
-      const parentToken = isAdult ? generateParentToken() : null;
+      const tokenPadre = isAdult ? generarTokenPadre() : null;
       const passwordHash = await bcrypt.hash(password, 10);
 
-      const { data: userData, error } = await supabase
+      const { data: datosUsuario, error } = await supabase
         .from('users')
         .insert([{
           email,
@@ -87,59 +101,50 @@ export function registerAuthRoutes(app, deps) {
           birth_date: birthDate,
           is_adult: isAdult,
           role,
-          parent_token: parentToken,
+          parent_token: tokenPadre,
         }])
         .select()
         .single();
 
       if (error) {
         if (error.code === '23505') {
-          await logSecurityEvent(supabase, {
+          await registrarFalloValidacionAuth({
+            supabase,
+            logSecurityEvent,
             actionType: 'registration_duplicate_email',
-            severity: 'medium',
-            details: { email },
+            reason: 'duplicate_email',
+            email,
             req,
+            severity: 'medium',
           });
           return res.status(400).json({ error: 'El email ya está registrado' });
         }
         throw error;
       }
 
-      if (!userData) {
+      if (!datosUsuario) {
         return res.status(500).json({ error: 'Error al crear usuario' });
       }
 
-      const profileId = await ensureProfileForAppUser(userData, { password });
+      const profileId = await asegurarPerfilParaUsuarioApp(datosUsuario, { password });
 
       await logSecurityEvent(supabase, {
-        userId: userData.id,
+        idUsuario: datosUsuario.id,
         actionType: 'registration_success',
         severity: 'low',
-        details: { email: userData.email, role: userData.role, isAdult: userData.is_adult },
+        details: { email: datosUsuario.email, role: datosUsuario.role, isAdult: datosUsuario.is_adult },
         req,
       });
 
-      const token = jwt.sign(
-        { id: userData.id, email: userData.email, role: userData.role, isAdult: Boolean(userData.is_adult), profileId },
-        JWT_SECRET,
-        { expiresIn: '7d' },
-      );
+      const token = firmarTokenAuth(datosUsuario, JWT_SECRET, profileId);
 
       return res.status(201).json({
         message: 'Usuario creado correctamente',
         token,
-        user: {
-          id: userData.id,
-          email: userData.email,
-          name: userData.nombre || userData.name,
-          alias: userData.alias || null,
+        user: usuarioPublico(datosUsuario, {
           profileId,
-          role: userData.role,
-          isAdult: userData.is_adult,
-          parentToken: userData.parent_token,
-          specialCode: normalizeSpecialCode(userData.special_code),
-          created_at: userData.created_at || null,
-        },
+          specialCode: normalizarCodigoEspecial(datosUsuario.special_code),
+        }),
       });
     } catch (error) {
       console.error('Error al registrar usuario:', error);
@@ -188,7 +193,7 @@ export function registerAuthRoutes(app, deps) {
       const validPassword = await bcrypt.compare(password, user.password_hash);
       if (!validPassword) {
         await logSecurityEvent(supabase, {
-          userId: user.id,
+          idUsuario: user.id,
           actionType: 'login_failed_wrong_password',
           severity: 'high',
           details: { email },
@@ -201,40 +206,28 @@ export function registerAuthRoutes(app, deps) {
 
       await supabase.from('users').update({ last_login: new Date().toISOString() }).eq('id', user.id);
 
-      const profileId = await ensureProfileForAppUser(user, { password });
+      const profileId = await asegurarPerfilParaUsuarioApp(user, { password });
 
       await logSecurityEvent(supabase, {
-        userId: user.id,
+        idUsuario: user.id,
         actionType: 'login_success',
         severity: 'low',
         details: { email: user.email, role: user.role },
         req,
       });
 
-      const token = jwt.sign(
-        { id: user.id, email: user.email, role: user.role, isAdult: Boolean(user.is_adult), profileId },
-        JWT_SECRET,
-        { expiresIn: '7d' },
-      );
+      const token = firmarTokenAuth(user, JWT_SECRET, profileId);
 
       const trustScore = await calculateTrustScore(supabase, user.id, { profileId });
 
       return res.json({
         token,
-        user: {
-          id: user.id,
-          email: user.email,
-          name: user.nombre || user.name,
-          alias: user.alias || null,
+        user: usuarioPublico(user, {
           profileId,
-          role: user.role,
-          isAdult: user.is_adult,
-          parentToken: user.parent_token,
-          specialCode: normalizeSpecialCode(user.special_code),
-          favorites: normalizeFavoriteIds(user.favoritos),
+          specialCode: normalizarCodigoEspecial(user.special_code),
+          favorites: normalizarIdsFavoritos(user.favoritos),
           trustScore,
-          created_at: user.created_at || null,
-        },
+        }),
       });
     } catch (error) {
       console.error('Error al hacer login:', error);
@@ -253,7 +246,7 @@ export function registerAuthRoutes(app, deps) {
 
     try {
       const { email, birthDate, newPassword } = req.body;
-      const resetResult = await resetUserPassword({
+      const resetResult = await restablecerContrasenaUsuario({
         email,
         birthDate,
         newPassword,
@@ -261,7 +254,7 @@ export function registerAuthRoutes(app, deps) {
       });
 
       await logSecurityEvent(supabase, {
-        userId: resetResult.userId,
+        idUsuario: resetResult.idUsuario,
         actionType: 'password_reset_success',
         severity: 'medium',
         details: { email: resetResult.email },
@@ -286,7 +279,7 @@ export function registerAuthRoutes(app, deps) {
     }
   });
 
-  app.get('/api/auth/me', authenticateToken, async (req, res) => {
+  app.get('/api/auth/me', autenticarToken, async (req, res) => {
     if (!supabase) return requireSupabase(res);
 
     try {
@@ -296,28 +289,20 @@ export function registerAuthRoutes(app, deps) {
         return res.status(404).json({ error: 'Usuario no encontrado' });
       }
 
-      const profileId = await resolveProfileIdForUser({
+      const profileId = await resolverIdPerfilParaUsuario({
         id: user.id,
         email: user.email,
         profileId: req.user.profileId,
       });
 
       return res.json({
-        user: {
-          id: user.id,
-          email: user.email,
-          name: user.nombre || user.name,
-          alias: user.alias || null,
+        user: usuarioPublico(user, {
           profileId,
-          role: user.role,
-          isAdult: user.is_adult,
-          parentToken: user.parent_token,
-          specialCode: normalizeSpecialCode(user.special_code),
-          favorites: normalizeFavoriteIds(user.favoritos),
+          specialCode: normalizarCodigoEspecial(user.special_code),
+          favorites: normalizarIdsFavoritos(user.favoritos),
           verified_email: user.verified_email,
           verified_phone: user.verified_phone,
-          created_at: user.created_at || null,
-        },
+        }),
       });
     } catch (error) {
       console.error('Error al obtener perfil:', error);
@@ -325,14 +310,14 @@ export function registerAuthRoutes(app, deps) {
     }
   });
 
-  app.post('/api/notifications/devices', authenticateToken, async (req, res) => {
+  app.post('/api/notifications/devices', autenticarToken, async (req, res) => {
     if (!supabase) return res.status(503).json({ error: 'Supabase no esta configurado para notificaciones' });
     const { token, platform = 'unknown', deviceName = null, appVersion = null } = req.body || {};
     if (!token || typeof token !== 'string') return res.status(400).json({ error: 'Token FCM requerido' });
 
     try {
-      const device = await registerDeviceToken(supabase, {
-        userId: req.user.id,
+      const device = await registrarTokenDispositivo(supabase, {
+        idUsuario: req.user.id,
         token: token.trim(),
         platform,
         deviceName,
@@ -345,12 +330,12 @@ export function registerAuthRoutes(app, deps) {
     }
   });
 
-  app.delete('/api/notifications/devices/:token', authenticateToken, async (req, res) => {
+  app.delete('/api/notifications/devices/:token', autenticarToken, async (req, res) => {
     if (!supabase) return res.status(503).json({ error: 'Supabase no esta configurado para notificaciones' });
 
     try {
-      const deleted = await deactivateDeviceToken(supabase, {
-        userId: req.user.id,
+      const deleted = await desactivarTokenDispositivo(supabase, {
+        idUsuario: req.user.id,
         token: decodeURIComponent(req.params.token || '').trim(),
       });
       return res.json({ message: deleted ? 'Dispositivo desactivado' : 'No se encontro el dispositivo' });
@@ -360,12 +345,12 @@ export function registerAuthRoutes(app, deps) {
     }
   });
 
-  app.get('/api/notifications', authenticateToken, async (req, res) => {
+  app.get('/api/notifications', autenticarToken, async (req, res) => {
     if (!supabase) return res.status(503).json({ error: 'Supabase no esta configurado para notificaciones' });
 
     try {
-      const limit = parsePositiveInteger(req.query.limit, 50);
-      const notifications = await listUserNotifications(supabase, req.user.id, limit);
+      const limit = parsearEnteroPositivo(req.query.limit, 50);
+      const notifications = await listarNotificacionesUsuario(supabase, req.user.id, limit);
       return res.json({ notifications });
     } catch (error) {
       console.error('Error listando notificaciones:', error);
@@ -373,16 +358,16 @@ export function registerAuthRoutes(app, deps) {
     }
   });
 
-  app.put('/api/notifications/:id/read', authenticateToken, async (req, res) => {
+  app.put('/api/notifications/:id/read', autenticarToken, async (req, res) => {
     if (!supabase) return res.status(503).json({ error: 'Supabase no esta configurado para notificaciones' });
 
     try {
-      const notificationId = parseInt(req.params.id, 10);
-      if (!Number.isFinite(notificationId)) {
+      const idNotificacion = parseInt(req.params.id, 10);
+      if (!Number.isFinite(idNotificacion)) {
         return res.status(400).json({ error: 'Identificador de notificacion invalido' });
       }
 
-      const updated = await markNotificationAsRead(supabase, req.user.id, notificationId);
+      const updated = await marcarNotificacionComoLeida(supabase, req.user.id, idNotificacion);
       if (!updated) return res.status(404).json({ error: 'Notificacion no encontrada' });
       return res.json({ message: 'Notificacion marcada como leida' });
     } catch (error) {
@@ -391,7 +376,7 @@ export function registerAuthRoutes(app, deps) {
     }
   });
 
-  app.get('/api/auth/favorites', authenticateToken, async (req, res) => {
+  app.get('/api/auth/favorites', autenticarToken, async (req, res) => {
     if (!supabase) return requireSupabase(res);
 
     try {
@@ -402,22 +387,22 @@ export function registerAuthRoutes(app, deps) {
         }
         throw error;
       }
-      return res.json({ favorites: normalizeFavoriteIds(data?.favoritos) });
+      return res.json({ favorites: normalizarIdsFavoritos(data?.favoritos) });
     } catch (error) {
       console.error('Error al obtener favoritos:', error);
       return res.status(500).json({ error: 'Error al obtener favoritos' });
     }
   });
 
-  app.put('/api/auth/favorites', authenticateToken, async (req, res) => {
+  app.put('/api/auth/favorites', autenticarToken, async (req, res) => {
     if (!supabase) return requireSupabase(res);
 
     try {
-      const favoriteIds = normalizeFavoriteIds(req.body?.favoriteIds);
+      const idsFavoritos = normalizarIdsFavoritos(req.body?.idsFavoritos);
 
       const { data, error } = await supabase
         .from('users')
-        .update({ favoritos: favoriteIds })
+        .update({ favoritos: idsFavoritos })
         .eq('id', req.user.id)
         .select('id, favoritos')
         .single();
@@ -431,7 +416,7 @@ export function registerAuthRoutes(app, deps) {
 
       return res.json({
         message: 'Favoritos actualizados correctamente',
-        favorites: normalizeFavoriteIds(data?.favoritos),
+        favorites: normalizarIdsFavoritos(data?.favoritos),
       });
     } catch (error) {
       console.error('Error al actualizar favoritos:', error);
@@ -439,50 +424,50 @@ export function registerAuthRoutes(app, deps) {
     }
   });
 
-  app.put('/api/auth/profile', authenticateToken, async (req, res) => {
+  app.put('/api/auth/profile', autenticarToken, async (req, res) => {
     if (!supabase) return requireSupabase(res);
 
     try {
-      const userId = req.user.id;
-      const alias = normalizeAlias(req.body?.alias);
-      const specialCode = normalizeSpecialCode(req.body?.specialCode);
+      const idUsuario = req.user.id;
+      const alias = normalizarAlias(req.body?.alias);
+      const specialCode = normalizarCodigoEspecial(req.body?.specialCode);
 
-      if (!isValidAlias(alias)) {
+      if (!esAliasValido(alias)) {
         return res.status(400).json({ error: 'Alias inválido. Usa 3-30 caracteres: letras, números, _ . -' });
       }
 
-      if (!isValidSpecialCode(specialCode)) {
+      if (!esCodigoEspecialValido(specialCode)) {
         return res.status(400).json({ error: 'Código especial inválido. El único valor permitido es "ayuda".' });
       }
 
-      let currentUser = null;
+      let usuarioActual = null;
       let missingSpecialCodeColumn = false;
 
       let { data, error } = await supabase
         .from('users')
         .select('id, is_adult, special_code')
-        .eq('id', userId)
+        .eq('id', idUsuario)
         .single();
 
       if (error && error.message?.toLowerCase().includes('special_code')) {
         missingSpecialCodeColumn = true;
-        const fallbackResponse = await supabase.from('users').select('id, is_adult').eq('id', userId).single();
+        const fallbackResponse = await supabase.from('users').select('id, is_adult').eq('id', idUsuario).single();
         data = fallbackResponse.data;
         error = fallbackResponse.error;
       }
 
       if (error) throw error;
-      currentUser = { ...data, special_code: missingSpecialCodeColumn ? null : data?.special_code };
+      usuarioActual = { ...data, special_code: missingSpecialCodeColumn ? null : data?.special_code };
 
-      if (!currentUser) return res.status(404).json({ error: 'Usuario no encontrado' });
-      if (!currentUser.is_adult && specialCode !== null) {
+      if (!usuarioActual) return res.status(404).json({ error: 'Usuario no encontrado' });
+      if (!usuarioActual.is_adult && specialCode !== null) {
         return res.status(403).json({ error: 'El código especial solo está disponible para perfiles Adulto' });
       }
 
-      const currentSpecialCode = normalizeSpecialCode(currentUser.special_code);
-      const nextSpecialCode = currentUser.is_adult && specialCode === 'ayuda' && currentSpecialCode === 'ayuda'
+      const currentSpecialCode = normalizarCodigoEspecial(usuarioActual.special_code);
+      const nextSpecialCode = usuarioActual.is_adult && specialCode === 'ayuda' && currentSpecialCode === 'ayuda'
         ? null
-        : (currentUser.is_adult ? specialCode : null);
+        : (usuarioActual.is_adult ? specialCode : null);
 
       if (missingSpecialCodeColumn && nextSpecialCode !== null) {
         return res.status(400).json({ error: 'Falta la columna special_code en Supabase. Ejecuta el script SQL actualizado.' });
@@ -493,36 +478,29 @@ export function registerAuthRoutes(app, deps) {
         ? 'id, email, nombre, alias, role, is_adult, parent_token'
         : 'id, email, nombre, alias, role, is_adult, parent_token, special_code';
 
-      const { data: updatedUser, error: updateError } = await supabase
+      const { data: updatedUser, error: errorActualizacion } = await supabase
         .from('users')
         .update(updatePayload)
-        .eq('id', userId)
+        .eq('id', idUsuario)
         .select(selectFields)
         .single();
 
-      if (updateError) {
-        if (updateError.message?.toLowerCase().includes('alias')) {
+      if (errorActualizacion) {
+        if (errorActualizacion.message?.toLowerCase().includes('alias')) {
           return res.status(400).json({ error: 'Falta la columna alias en Supabase. Ejecuta el script SQL actualizado.' });
         }
-        if (updateError.message?.toLowerCase().includes('special_code')) {
+        if (errorActualizacion.message?.toLowerCase().includes('special_code')) {
           return res.status(400).json({ error: 'Falta la columna special_code en Supabase. Ejecuta el script SQL actualizado.' });
         }
-        throw updateError;
+        throw errorActualizacion;
       }
 
       return res.json({
         message: 'Perfil actualizado correctamente',
-        user: {
-          id: updatedUser.id,
-          email: updatedUser.email,
-          name: updatedUser.nombre || updatedUser.name,
-          alias: updatedUser.alias || null,
+        user: usuarioPublico(updatedUser, {
           profileId: req.user.profileId || null,
-          role: updatedUser.role,
-          isAdult: updatedUser.is_adult,
-          parentToken: updatedUser.parent_token,
-          specialCode: normalizeSpecialCode(updatedUser.special_code),
-        },
+          specialCode: normalizarCodigoEspecial(updatedUser.special_code),
+        }),
       });
     } catch (error) {
       console.error('Error al actualizar perfil:', error);

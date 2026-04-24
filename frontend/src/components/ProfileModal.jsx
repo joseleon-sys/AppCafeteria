@@ -1,9 +1,10 @@
+// Modal de perfil con pestañas de informacion, alias, estadisticas y familia.
 import React, { useState } from "react";
 import "./ProfileModal.css";
-import { getMyChildrenLinks, getMyParentLinks, updateProfile } from "../lib/api";
+import { obtenerMisVinculosHijos, obtenerMisVinculosPadre, actualizarPerfil } from "../lib/api";
 import { showError, showSuccess } from "./Toast";
 import LinkRequestsList from "./LinkRequestsList";
-import { buildProfileStatsFromOrders, fetchOrderHistoryForUser } from "../lib/orderService";
+import { construirEstadisticasPerfilDesdePedidos, obtenerHistorialPedidosParaUsuario } from "../lib/orderService";
 
 export default function ProfileModal({ isOpen, onClose, user, onLogout, onUserUpdate }) {
   const [activeTab, setActiveTab] = useState('info');
@@ -11,11 +12,12 @@ export default function ProfileModal({ isOpen, onClose, user, onLogout, onUserUp
   const [specialCodeInput, setSpecialCodeInput] = useState('');
   const [aliasSaving, setAliasSaving] = useState(false);
   const [aliasMessage, setAliasMessage] = useState('');
-  const [profileStats, setProfileStats] = useState(() => buildProfileStatsFromOrders([], user));
+  const [profileStats, setProfileStats] = useState(() => construirEstadisticasPerfilDesdePedidos([], user));
   const [familyLinks, setFamilyLinks] = useState([]);
   const [familyLoading, setFamilyLoading] = useState(false);
 
   React.useEffect(() => {
+    // Cada vez que cambia el usuario o se abre el modal, sincronizamos los inputs locales.
     setAliasInput(user?.alias || '');
     setSpecialCodeInput(user?.specialCode || '');
     setAliasMessage('');
@@ -26,38 +28,39 @@ export default function ProfileModal({ isOpen, onClose, user, onLogout, onUserUp
 
     let cancelled = false;
 
-    const loadProfileData = async () => {
+    const cargarDatosPerfil = async () => {
       try {
-        const orders = await fetchOrderHistoryForUser(user);
+        const orders = await obtenerHistorialPedidosParaUsuario(user);
         if (!cancelled) {
-          setProfileStats(buildProfileStatsFromOrders(orders, user));
+          setProfileStats(construirEstadisticasPerfilDesdePedidos(orders, user));
         }
       } catch (error) {
         console.error('Error cargando estadisticas de perfil:', error);
         if (!cancelled) {
-          setProfileStats(buildProfileStatsFromOrders([], user));
+          setProfileStats(construirEstadisticasPerfilDesdePedidos([], user));
         }
         showError(error.message || 'No se pudieron cargar las estadisticas del perfil');
       }
     };
 
-    loadProfileData();
+    cargarDatosPerfil();
 
     return () => {
       cancelled = true;
     };
   }, [isOpen, user]);
 
-  const loadFamilyData = React.useCallback(async () => {
+  const cargarDatosFamilia = React.useCallback(async () => {
+    // Dependiendo del rol, consulta padres vinculados o hijos vinculados.
     if (!user || !isOpen) return;
 
     setFamilyLoading(true);
     try {
       if (user?.isAdult && user?.role !== 'admin') {
-        const data = await getMyChildrenLinks();
+        const data = await obtenerMisVinculosHijos();
         setFamilyLinks(data.children || []);
       } else {
-        const data = await getMyParentLinks();
+        const data = await obtenerMisVinculosPadre();
         setFamilyLinks(data.parents || []);
       }
     } catch (error) {
@@ -71,8 +74,8 @@ export default function ProfileModal({ isOpen, onClose, user, onLogout, onUserUp
 
   React.useEffect(() => {
     if (activeTab !== 'family' || !isOpen || !user) return;
-    loadFamilyData();
-  }, [activeTab, isOpen, user, loadFamilyData]);
+    cargarDatosFamilia();
+  }, [activeTab, isOpen, user, cargarDatosFamilia]);
 
   const realName = user?.name || 'Usuario';
   const visibleAlias = user?.alias ? `@${user.alias}` : null;
@@ -86,7 +89,7 @@ export default function ProfileModal({ isOpen, onClose, user, onLogout, onUserUp
   const familyTitle = user?.isAdult && user?.role !== 'admin' ? 'Familiares vinculados' : 'Padres y tutores vinculados';
 
   // Calcular fecha de miembro
-  const formatMemberDate = (dateString) => {
+  const formatearFechaMiembro = (dateString) => {
     if (!dateString) return 'Información no disponible';
     try {
       const date = new Date(dateString);
@@ -107,7 +110,8 @@ export default function ProfileModal({ isOpen, onClose, user, onLogout, onUserUp
     { id: 'family', label: 'Familia', icon: '👨‍👩‍👧', description: 'Vinculación' }
   ];
 
-  async function handleSaveAlias() {
+  async function gestionarGuardarAlias() {
+    // Guarda alias y codigo especial usando la API de perfil.
     const normalizedAlias = aliasInput.trim();
 
     if (normalizedAlias && !/^[A-Za-z0-9_.-]{3,30}$/.test(normalizedAlias)) {
@@ -119,7 +123,7 @@ export default function ProfileModal({ isOpen, onClose, user, onLogout, onUserUp
     setAliasMessage('');
 
     try {
-      const result = await updateProfile(normalizedAlias || null, user?.specialCode || null);
+      const result = await actualizarPerfil(normalizedAlias || null, user?.specialCode || null);
       const savedAlias = result?.user?.alias || null;
       onUserUpdate && onUserUpdate({ alias: savedAlias });
       setAliasInput(savedAlias || '');
@@ -131,7 +135,7 @@ export default function ProfileModal({ isOpen, onClose, user, onLogout, onUserUp
     }
   }
 
-  async function handleSaveSpecialCode() {
+  async function gestionarGuardarCodigoEspecial() {
     if (!user?.isAdult) {
       setAliasMessage('El código especial solo está disponible para perfiles Adulto');
       return;
@@ -141,7 +145,7 @@ export default function ProfileModal({ isOpen, onClose, user, onLogout, onUserUp
     setAliasMessage('');
 
     try {
-      const result = await updateProfile(user?.alias || null, specialCodeInput.trim() || null);
+      const result = await actualizarPerfil(user?.alias || null, specialCodeInput.trim() || null);
       const savedSpecialCode = result?.user?.specialCode || null;
       onUserUpdate && onUserUpdate({ specialCode: savedSpecialCode });
       setSpecialCodeInput(savedSpecialCode || '');
@@ -202,7 +206,7 @@ export default function ProfileModal({ isOpen, onClose, user, onLogout, onUserUp
                 </div>
                 <div className="info-item">
                   <span className="info-label">Miembro desde:</span>
-                  <span className="info-value">{formatMemberDate(user?.created_at)}</span>
+                  <span className="info-value">{formatearFechaMiembro(user?.created_at)}</span>
                 </div>
                 <div className="info-item">
                   <span className="info-label">Estado:</span>
@@ -235,7 +239,7 @@ export default function ProfileModal({ isOpen, onClose, user, onLogout, onUserUp
                       <button
                         className="alias-save-btn"
                         type="button"
-                        onClick={handleSaveSpecialCode}
+                        onClick={gestionarGuardarCodigoEspecial}
                         disabled={aliasSaving}
                       >
                         {aliasSaving ? '⟳' : '✓'}
@@ -271,7 +275,7 @@ export default function ProfileModal({ isOpen, onClose, user, onLogout, onUserUp
                     <button
                       className="alias-save-btn"
                       type="button"
-                      onClick={handleSaveAlias}
+                      onClick={gestionarGuardarAlias}
                       disabled={aliasSaving}
                     >
                       {aliasSaving ? '⟳' : '✓'}
@@ -316,17 +320,17 @@ export default function ProfileModal({ isOpen, onClose, user, onLogout, onUserUp
                     Vincula familiares menores de edad a tu cuenta para gestionar sus pedidos.
                   </p>
 
-                  {user?.parentToken ? (
+                  {user?.tokenPadre ? (
                     <div className="token-card">
                       <div className="token-header">
                         <span className="token-icon">🎫</span>
                         <span className="token-label">Tu Token de Vinculación</span>
                       </div>
-                      <div className="token-value">{user.parentToken}</div>
+                      <div className="token-value">{user.tokenPadre}</div>
                       <button
                         className="copy-token-btn"
                         onClick={() => {
-                          navigator.clipboard.writeText(user.parentToken);
+                          navigator.clipboard.writeText(user.tokenPadre);
                           showSuccess('Token copiado al portapapeles');
                         }}
                       >
@@ -352,7 +356,7 @@ export default function ProfileModal({ isOpen, onClose, user, onLogout, onUserUp
                   {user?.isAdult && user?.role !== 'admin' && (
                     <div className="linked-users" style={{ marginTop: 16 }}>
                       <h5 className="linked-title">Solicitudes pendientes</h5>
-                      <LinkRequestsList onChange={loadFamilyData} />
+                      <LinkRequestsList onChange={cargarDatosFamilia} />
                     </div>
                   )}
 
@@ -362,7 +366,7 @@ export default function ProfileModal({ isOpen, onClose, user, onLogout, onUserUp
                       <button
                         type="button"
                         className="linked-refresh-btn"
-                        onClick={loadFamilyData}
+                        onClick={cargarDatosFamilia}
                         disabled={familyLoading}
                       >
                         {familyLoading ? 'Cargando...' : 'Actualizar'}

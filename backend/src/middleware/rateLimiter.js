@@ -1,10 +1,10 @@
-// Rate Limiter Middleware con protección anti-fraude
+// Limitadores simples en memoria para frenar abusos comunes.
 
 const loginAttempts = new Map(); // IP -> { count, firstAttempt }
 const registrationAttempts = new Map(); // IP -> { count, firstAttempt }
-const linkingAttempts = new Map(); // userId -> { count, firstAttempt }
+const linkingAttempts = new Map(); // idUsuario -> { count, firstAttempt }
 
-// Helper para obtener IP del cliente
+// Intenta descubrir la IP real del cliente usando varias cabeceras posibles.
 function getClientIP(req) {
   return req.headers['x-forwarded-for']?.split(',')[0] || 
          req.headers['x-real-ip'] || 
@@ -13,7 +13,7 @@ function getClientIP(req) {
          'unknown';
 }
 
-// Helper para limpiar registros antiguos
+// Borra entradas viejas para que los contadores no crezcan sin limite.
 function cleanOldRecords(map, maxAge) {
   const now = Date.now();
   for (const [key, value] of map.entries()) {
@@ -23,7 +23,7 @@ function cleanOldRecords(map, maxAge) {
   }
 }
 
-// Middleware: Max 5 intentos de login por hora
+// Permite como maximo 5 intentos de login por hora y por IP.
 export function loginRateLimiter(req, res, next) {
   const ip = getClientIP(req);
   const now = Date.now();
@@ -57,7 +57,7 @@ export function loginRateLimiter(req, res, next) {
   next();
 }
 
-// Middleware: Max 3 registros desde misma IP por día
+// Permite como maximo 3 registros por dia desde la misma IP.
 export function registrationRateLimiter(req, res, next) {
   const ip = getClientIP(req);
   const now = Date.now();
@@ -91,11 +91,11 @@ export function registrationRateLimiter(req, res, next) {
   next();
 }
 
-// Middleware: Max 10 solicitudes de vinculación por día
+// Permite como maximo 10 solicitudes de vinculacion por dia y por usuario.
 export function linkingRateLimiter(req, res, next) {
-  const userId = req.user?.id;
+  const idUsuario = req.user?.id;
   
-  if (!userId) {
+  if (!idUsuario) {
     return res.status(401).json({ error: 'No autenticado' });
   }
   
@@ -104,16 +104,16 @@ export function linkingRateLimiter(req, res, next) {
   
   cleanOldRecords(linkingAttempts, oneDay);
   
-  const attempts = linkingAttempts.get(userId);
+  const attempts = linkingAttempts.get(idUsuario);
   
   if (!attempts) {
-    linkingAttempts.set(userId, { count: 1, firstAttempt: now });
+    linkingAttempts.set(idUsuario, { count: 1, firstAttempt: now });
     return next();
   }
   
   // Si ha pasado más de 1 día, resetear
   if (now - attempts.firstAttempt > oneDay) {
-    linkingAttempts.set(userId, { count: 1, firstAttempt: now });
+    linkingAttempts.set(idUsuario, { count: 1, firstAttempt: now });
     return next();
   }
   
@@ -130,7 +130,7 @@ export function linkingRateLimiter(req, res, next) {
   next();
 }
 
-// Helper para registrar evento exitoso (resetear contador en login exitoso)
+// Si un login termina bien, limpiamos el contador de esa IP.
 export function resetLoginAttempts(ip) {
   loginAttempts.delete(ip);
 }

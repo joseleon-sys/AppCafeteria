@@ -1,5 +1,7 @@
+// Este archivo crea la app y lanza el servidor HTTP.
 import { createServerApp } from './app/createServerApp.js';
 
-const { startServer } = createServerApp();
+const { iniciarServidor } = createServerApp();
 
-startServer();
+// Arranque real del backend.
+iniciarServidor();

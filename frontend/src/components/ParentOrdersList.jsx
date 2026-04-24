@@ -1,5 +1,6 @@
+// Lista de pedidos pendientes o historicos que un padre puede revisar para sus hijos.
 import { useState, useEffect } from 'react';
-import { getParentChildOrders, approveChildOrder, rejectChildOrder, markOrderAsPaid } from '../lib/api';
+import { obtenerPedidosPadreHijo, aprobarPedidoHijo, rechazarPedidoHijo, marcarPedidoComoPagado } from '../lib/api';
 import { showSuccess, showError } from './Toast';
 import { showPrompt } from './Dialog';
 import OrderDetailModal from './OrderDetailModal';
@@ -13,13 +14,13 @@ export default function ParentOrdersList({ user }) {
   const [showDetail, setShowDetail] = useState(false);
 
   useEffect(() => {
-    fetchOrders();
+    obtenerPedidos();
   }, [filter]);
 
-  const fetchOrders = async () => {
+  const obtenerPedidos = async () => {
     setLoading(true);
     try {
-      const response = await getParentChildOrders({ status: filter });
+      const response = await obtenerPedidosPadreHijo({ status: filter });
       setOrders(response.orders || []);
     } catch (error) {
       console.error('Error fetching orders:', error);
@@ -29,17 +30,17 @@ export default function ParentOrdersList({ user }) {
     }
   };
 
-  const handleApprove = async (orderId) => {
+  const handleApprove = async (idPedido) => {
     try {
-      await approveChildOrder(orderId);
+      await aprobarPedidoHijo(idPedido);
       showSuccess('✅ Pedido aprobado');
-      fetchOrders();
+      obtenerPedidos();
     } catch (error) {
       showError(error.message || 'Error al aprobar pedido');
     }
   };
 
-  const handleReject = async (orderId) => {
+  const handleReject = async (idPedido) => {
     const reason = await showPrompt('Motivo del rechazo', 'Por favor indica por qué rechazas este pedido');
     
     if (!reason || reason.trim().length < 3) {
@@ -48,19 +49,19 @@ export default function ParentOrdersList({ user }) {
     }
 
     try {
-      await rejectChildOrder(orderId, reason);
+      await rechazarPedidoHijo(idPedido, reason);
       showSuccess('❌ Pedido rechazado');
-      fetchOrders();
+      obtenerPedidos();
     } catch (error) {
       showError(error.message || 'Error al rechazar pedido');
     }
   };
 
-  const handleMarkPaid = async (orderId) => {
+  const handleMarkPaid = async (idPedido) => {
     try {
-      await markOrderAsPaid(orderId, 'cash');
+      await marcarPedidoComoPagado(idPedido, 'cash');
       showSuccess('💰 Pedido marcado como pagado');
-      fetchOrders();
+      obtenerPedidos();
     } catch (error) {
       showError(error.message || 'Error al marcar como pagado');
     }
@@ -203,9 +204,11 @@ export default function ParentOrdersList({ user }) {
             setShowDetail(false);
             setSelectedOrder(null);
           }}
-          onRefresh={fetchOrders}
+          onRefresh={obtenerPedidos}
         />
       )}
     </div>
   );
 }
+// Lista de pedidos pendientes o historicos que un padre puede revisar para sus hijos.
+// Lista de pedidos pendientes o historicos que un padre puede revisar para sus hijos.

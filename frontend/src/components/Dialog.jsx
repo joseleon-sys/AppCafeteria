@@ -1,7 +1,8 @@
+// Sistema global de dialogos modales reutilizable desde cualquier componente.
 import React, { useState, useCallback } from "react";
 import "./Dialog.css";
 
-// Global dialog manager
+// Cola global compartida para que cualquier modulo pueda abrir dialogs sin prop drilling.
 let dialogQueue = [];
 let dialogListeners = [];
 

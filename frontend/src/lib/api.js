@@ -1,23 +1,28 @@
-const DEFAULT_API_URL = 'http://localhost:3000';
+// Capa central de acceso a la API del backend.
+const URL_API_POR_DEFECTO = 'http://localhost:3000';
 
-function normalizeApiUrl(url) {
+function normalizarUrlApi(url) {
+  // Quita espacios y barras finales para construir URLs estables.
   return String(url || '').trim().replace(/\/+$/, '');
 }
 
-function uniqueUrls(urls) {
+function urlsUnicas(urls) {
+  // Elimina URLs vacias o repetidas.
   return urls.filter((url, index) => url && urls.indexOf(url) === index);
 }
 
-const API_URL = normalizeApiUrl(import.meta.env.VITE_API_URL || import.meta.env.BACKEND_URL || DEFAULT_API_URL);
-const API_FALLBACK_URL = normalizeApiUrl(import.meta.env.VITE_API_FALLBACK_URL || import.meta.env.VITE_RAILWAY_API_URL);
-const API_URLS = uniqueUrls([API_URL, API_FALLBACK_URL]);
+const URL_API = normalizarUrlApi(import.meta.env.VITE_API_URL || import.meta.env.BACKEND_URL || URL_API_POR_DEFECTO);
+const URL_API_RESPALDO = normalizarUrlApi(import.meta.env.VITE_API_FALLBACK_URL || import.meta.env.VITE_RAILWAY_API_URL);
+const URLS_API = urlsUnicas([URL_API, URL_API_RESPALDO]);
 
-function getAuthToken() {
+function obtenerTokenAuth() {
+  // Recupera el JWT guardado en el navegador.
   return localStorage.getItem('cafeteria_token');
 }
 
-function getAuthHeaders(includeContentType = false) {
-  const token = getAuthToken();
+function obtenerCabecerasAuth(includeContentType = false) {
+  // Construye las cabeceras HTTP necesarias para peticiones autenticadas.
+  const token = obtenerTokenAuth();
   const headers = {};
 
   if (includeContentType) {
@@ -31,7 +36,8 @@ function getAuthHeaders(includeContentType = false) {
   return headers;
 }
 
-async function handleResponse(response) {
+async function gestionarRespuesta(response) {
+  // Convierte la respuesta a JSON y lanza error si el backend respondio mal.
   if (response.status === 204) {
     return null;
   }
@@ -45,15 +51,17 @@ async function handleResponse(response) {
   return payload;
 }
 
-async function apiRequest(path, options = {}, { auth = false, contentType = false } = {}) {
+async function peticionApi(path, options = {}, { auth = false, contentType = false } = {}) {
+  // Funcion base reutilizada por el resto de llamadas a la API.
   const headers = {
-    ...(auth ? getAuthHeaders(contentType) : (contentType ? { 'Content-Type': 'application/json' } : {})),
+    ...(auth ? obtenerCabecerasAuth(contentType) : (contentType ? { 'Content-Type': 'application/json' } : {})),
     ...(options.headers || {}),
   };
 
   let lastNetworkError;
 
-  for (const baseUrl of API_URLS) {
+  for (const baseUrl of URLS_API) {
+    // Intenta primero la URL principal y luego la de respaldo si existe.
     let response;
 
     try {
@@ -70,171 +78,174 @@ async function apiRequest(path, options = {}, { auth = false, contentType = fals
       continue;
     }
 
-    return handleResponse(response);
+    return gestionarRespuesta(response);
   }
 
   throw lastNetworkError || new Error('No API URL configured');
 }
 
-export { API_URL, API_FALLBACK_URL, API_URLS, getAuthToken, getAuthHeaders, handleResponse, apiRequest };
+export { URL_API, URL_API_RESPALDO, URLS_API, obtenerTokenAuth, obtenerCabecerasAuth, gestionarRespuesta, peticionApi };
 
-export async function loginUser(credentials) {
-  return apiRequest('/api/auth/login', {
+export async function iniciarSesion(credenciales) {
+  // Login de usuario.
+  return peticionApi('/api/auth/login', {
     method: 'POST',
-    body: JSON.stringify(credentials),
+    body: JSON.stringify(credenciales),
   }, { contentType: true });
 }
 
-export async function registerUser(userData) {
-  return apiRequest('/api/auth/register', {
+export async function registrarUsuario(datosUsuario) {
+  // Registro de usuario nuevo.
+  return peticionApi('/api/auth/register', {
     method: 'POST',
-    body: JSON.stringify(userData),
+    body: JSON.stringify(datosUsuario),
   }, { contentType: true });
 }
 
-export async function resetPassword(payload) {
-  return apiRequest('/api/auth/reset-password', {
+export async function restablecerContrasena(payload) {
+  // Flujo de recuperacion de acceso.
+  return peticionApi('/api/auth/reset-password', {
     method: 'POST',
     body: JSON.stringify(payload),
   }, { contentType: true });
 }
 
-export async function getAllProducts() {
-  return apiRequest('/api/products', {}, { auth: true });
+export async function obtenerTodosLosProductos() {
+  return peticionApi('/api/products', {}, { auth: true });
 }
 
-export async function getActiveProducts() {
-  return apiRequest('/api/menu');
+export async function obtenerProductosActivos() {
+  return peticionApi('/api/menu');
 }
 
-export async function createProduct(productData) {
-  return apiRequest('/api/products', {
+export async function crearProducto(datosProducto) {
+  return peticionApi('/api/products', {
     method: 'POST',
-    body: JSON.stringify(productData),
+    body: JSON.stringify(datosProducto),
   }, { auth: true, contentType: true });
 }
 
-export async function updateProduct(id, productData) {
-  return apiRequest(`/api/products/${id}`, {
+export async function actualizarProducto(id, datosProducto) {
+  return peticionApi(`/api/products/${id}`, {
     method: 'PUT',
-    body: JSON.stringify(productData),
+    body: JSON.stringify(datosProducto),
   }, { auth: true, contentType: true });
 }
 
-export async function deleteProduct(id, permanent = false) {
+export async function eliminarProducto(id, permanent = false) {
   const suffix = permanent ? '?permanent=true' : '';
-  return apiRequest(`/api/products/${id}${suffix}`, {
+  return peticionApi(`/api/products/${id}${suffix}`, {
     method: 'DELETE',
   }, { auth: true });
 }
 
-export async function createOrder(orderData) {
-  return apiRequest('/api/orders', {
+export async function crearPedido(datosPedido) {
+  return peticionApi('/api/orders', {
     method: 'POST',
-    body: JSON.stringify(orderData),
+    body: JSON.stringify(datosPedido),
   }, { auth: true, contentType: true });
 }
 
-export async function createCheckoutSession(items = []) {
-  return apiRequest('/api/stripe/create-checkout-session', {
+export async function crearSesionDePago(items = []) {
+  return peticionApi('/api/stripe/create-checkout-session', {
     method: 'POST',
     body: JSON.stringify({ items }),
   }, { auth: true, contentType: true });
 }
 
-export async function getOrder(id) {
-  return apiRequest(`/api/orders/${id}`, {}, { auth: true });
+export async function obtenerPedido(id) {
+  return peticionApi(`/api/orders/${id}`, {}, { auth: true });
 }
 
-export async function getMyOrders(status = null, limit = 50) {
+export async function obtenerMisPedidos(status = null, limit = 50) {
   const params = new URLSearchParams();
   if (status) params.append('status', status);
   if (limit) params.append('limit', String(limit));
 
   const suffix = params.toString() ? `?${params.toString()}` : '';
-  return apiRequest(`/api/orders/my${suffix}`, {}, { auth: true });
+  return peticionApi(`/api/orders/my${suffix}`, {}, { auth: true });
 }
 
-export async function healthCheck() {
-  return apiRequest('/api/health');
+export async function verificarSalud() {
+  return peticionApi('/api/health');
 }
 
-export async function updateProfile(alias, specialCode = undefined) {
-  return apiRequest('/api/auth/profile', {
+export async function actualizarPerfil(alias, specialCode = undefined) {
+  return peticionApi('/api/auth/profile', {
     method: 'PUT',
     body: JSON.stringify({ alias, ...(specialCode !== undefined ? { specialCode } : {}) }),
   }, { auth: true, contentType: true });
 }
 
-export async function updateProfileAlias(alias) {
-  return updateProfile(alias);
+export async function actualizarAliasPerfil(alias) {
+  return actualizarPerfil(alias);
 }
 
-export async function getCurrentUser() {
-  return apiRequest('/api/auth/me', {}, { auth: true });
+export async function obtenerUsuarioActual() {
+  return peticionApi('/api/auth/me', {}, { auth: true });
 }
 
-export async function getMyFavorites() {
-  return apiRequest('/api/auth/favorites', {}, { auth: true });
+export async function obtenerMisFavoritos() {
+  return peticionApi('/api/auth/favorites', {}, { auth: true });
 }
 
-export async function updateMyFavorites(favoriteIds) {
-  return apiRequest('/api/auth/favorites', {
+export async function actualizarMisFavoritos(idsFavoritos) {
+  return peticionApi('/api/auth/favorites', {
     method: 'PUT',
-    body: JSON.stringify({ favoriteIds }),
+    body: JSON.stringify({ favoriteIds: idsFavoritos }),
   }, { auth: true, contentType: true });
 }
 
-export async function requestParentLink(parentToken) {
-  return apiRequest('/api/child/link-parent', {
+export async function solicitarVinculoPadre(tokenPadre) {
+  return peticionApi('/api/child/link-parent', {
     method: 'POST',
-    body: JSON.stringify({ parentToken }),
+    body: JSON.stringify({ parentToken: tokenPadre }),
   }, { auth: true, contentType: true });
 }
 
-export async function getParentLinkRequests() {
-  return apiRequest('/api/parent/link-requests', {}, { auth: true });
+export async function obtenerSolicitudesVinculoPadre() {
+  return peticionApi('/api/parent/link-requests', {}, { auth: true });
 }
 
-export async function approveParentLinkRequest(requestId, spendingLimit = 20) {
-  return apiRequest(`/api/parent/link-requests/${requestId}/approve`, {
+export async function aprobarSolicitudVinculoPadre(idSolicitud, limiteGasto = 20) {
+  return peticionApi(`/api/parent/link-requests/${idSolicitud}/approve`, {
     method: 'PUT',
-    body: JSON.stringify({ spendingLimit }),
+    body: JSON.stringify({ spendingLimit: limiteGasto }),
   }, { auth: true, contentType: true });
 }
 
-export async function rejectParentLinkRequest(requestId, reason) {
-  return apiRequest(`/api/parent/link-requests/${requestId}/reject`, {
+export async function rechazarSolicitudVinculoPadre(idSolicitud, reason) {
+  return peticionApi(`/api/parent/link-requests/${idSolicitud}/reject`, {
     method: 'PUT',
     body: JSON.stringify({ reason }),
   }, { auth: true, contentType: true });
 }
 
-export async function getMyParentLinks() {
-  return apiRequest('/api/child/my-parents', {}, { auth: true });
+export async function obtenerMisVinculosPadre() {
+  return peticionApi('/api/child/my-parents', {}, { auth: true });
 }
 
-export async function getMyChildrenLinks() {
-  return apiRequest('/api/parent/my-children', {}, { auth: true });
+export async function obtenerMisVinculosHijos() {
+  return peticionApi('/api/parent/my-children', {}, { auth: true });
 }
 
-export async function createChildOrder(items, notes = '', parentId = null) {
-  return apiRequest('/api/child/orders', {
+export async function crearPedidoHijo(items, notes = '', parentId = null) {
+  return peticionApi('/api/child/orders', {
     method: 'POST',
     body: JSON.stringify({ items, notes, parent_id: parentId }),
   }, { auth: true, contentType: true });
 }
 
-export async function getMyChildOrders(status = null) {
+export async function obtenerMisPedidosHijo(status = null) {
   const query = status ? `?status=${encodeURIComponent(status)}` : '';
-  return apiRequest(`/api/child/orders${query}`, {}, { auth: true });
+  return peticionApi(`/api/child/orders${query}`, {}, { auth: true });
 }
 
-export async function getMyChildOrderDetail(orderId) {
-  return apiRequest(`/api/child/orders/${orderId}`, {}, { auth: true });
+export async function obtenerDetalleMiPedidoHijo(idPedido) {
+  return peticionApi(`/api/child/orders/${idPedido}`, {}, { auth: true });
 }
 
-export async function getParentChildOrders(filters = {}) {
+export async function obtenerPedidosPadreHijo(filters = {}) {
   const params = new URLSearchParams();
   if (filters.status) params.append('status', filters.status);
   if (filters.child_id) params.append('child_id', filters.child_id);
@@ -242,42 +253,42 @@ export async function getParentChildOrders(filters = {}) {
   if (filters.offset) params.append('offset', String(filters.offset));
 
   const suffix = params.toString() ? `?${params.toString()}` : '';
-  return apiRequest(`/api/parent/child-orders${suffix}`, {}, { auth: true });
+  return peticionApi(`/api/parent/child-orders${suffix}`, {}, { auth: true });
 }
 
-export async function getParentOrderDetail(orderId) {
-  return apiRequest(`/api/parent/orders/${orderId}`, {}, { auth: true });
+export async function obtenerDetallePedidoPadre(idPedido) {
+  return peticionApi(`/api/parent/orders/${idPedido}`, {}, { auth: true });
 }
 
-export async function approveChildOrder(orderId, approvedAmount = null) {
-  return apiRequest(`/api/parent/orders/${orderId}/approve`, {
+export async function aprobarPedidoHijo(idPedido, approvedAmount = null) {
+  return peticionApi(`/api/parent/orders/${idPedido}/approve`, {
     method: 'PUT',
     body: JSON.stringify({ approved_amount: approvedAmount }),
   }, { auth: true, contentType: true });
 }
 
-export async function rejectChildOrder(orderId, reason) {
-  return apiRequest(`/api/parent/orders/${orderId}/reject`, {
+export async function rechazarPedidoHijo(idPedido, reason) {
+  return peticionApi(`/api/parent/orders/${idPedido}/reject`, {
     method: 'PUT',
     body: JSON.stringify({ reason }),
   }, { auth: true, contentType: true });
 }
 
-export async function modifyChildOrder(orderId, items) {
-  return apiRequest(`/api/parent/orders/${orderId}/modify`, {
+export async function modificarPedidoHijo(idPedido, items) {
+  return peticionApi(`/api/parent/orders/${idPedido}/modify`, {
     method: 'PUT',
     body: JSON.stringify({ items }),
   }, { auth: true, contentType: true });
 }
 
-export async function markOrderAsPaid(orderId, paymentMethod = 'cash', amountPaid = null) {
-  return apiRequest(`/api/parent/orders/${orderId}/pay`, {
+export async function marcarPedidoComoPagado(idPedido, metodoPago = 'cash', montoPagado = null) {
+  return peticionApi(`/api/parent/orders/${idPedido}/pay`, {
     method: 'PUT',
-    body: JSON.stringify({ payment_method: paymentMethod, amount_paid: amountPaid }),
+    body: JSON.stringify({ payment_method: metodoPago, amount_paid: montoPagado }),
   }, { auth: true, contentType: true });
 }
 
-export async function getOrderHistory(filters = {}) {
+export async function obtenerPedidoHistory(filters = {}) {
   const params = new URLSearchParams();
   if (filters.child_id) params.append('child_id', filters.child_id);
   if (filters.status) params.append('status', filters.status);
@@ -286,115 +297,115 @@ export async function getOrderHistory(filters = {}) {
   if (filters.limit) params.append('limit', String(filters.limit));
 
   const suffix = params.toString() ? `?${params.toString()}` : '';
-  return apiRequest(`/api/parent/child-orders/history${suffix}`, {}, { auth: true });
+  return peticionApi(`/api/parent/child-orders/history${suffix}`, {}, { auth: true });
 }
 
-export async function getAdminStatistics() {
-  return apiRequest('/api/admin/statistics', {}, { auth: true });
+export async function obtenerEstadisticasAdmin() {
+  return peticionApi('/api/admin/statistics', {}, { auth: true });
 }
 
-export async function registerDeviceToken(payload) {
-  return apiRequest('/api/notifications/devices', {
+export async function registrarTokenDispositivo(payload) {
+  return peticionApi('/api/notifications/devices', {
     method: 'POST',
     body: JSON.stringify(payload),
   }, { auth: true, contentType: true });
 }
 
-export async function unregisterDeviceToken(token) {
-  return apiRequest(`/api/notifications/devices/${encodeURIComponent(token)}`, {
+export async function unregistrarTokenDispositivo(token) {
+  return peticionApi(`/api/notifications/devices/${encodeURIComponent(token)}`, {
     method: 'DELETE',
   }, { auth: true });
 }
 
-export async function getMyNotifications(limit = 50) {
+export async function obtenerMisNotificaciones(limit = 50) {
   const params = new URLSearchParams();
   if (limit) params.append('limit', String(limit));
   const suffix = params.toString() ? `?${params.toString()}` : '';
 
-  return apiRequest(`/api/notifications${suffix}`, {}, { auth: true });
+  return peticionApi(`/api/notifications${suffix}`, {}, { auth: true });
 }
 
-export async function markNotificationAsRead(notificationId) {
-  return apiRequest(`/api/notifications/${notificationId}/read`, {
+export async function marcarNotificacionComoLeida(idNotificacion) {
+  return peticionApi(`/api/notifications/${idNotificacion}/read`, {
     method: 'PUT',
   }, { auth: true });
 }
 
-export async function getAdminOrderQueue() {
-  return apiRequest('/api/admin/orders/queue', {}, { auth: true });
+export async function obtenerColaPedidosAdmin() {
+  return peticionApi('/api/admin/orders/queue', {}, { auth: true });
 }
 
-export async function getFraudLog() {
-  return apiRequest('/api/admin/fraud-log', {}, { auth: true });
+export async function obtenerRegistroFraude() {
+  return peticionApi('/api/admin/fraud-log', {}, { auth: true });
 }
 
-export async function getAllUsers() {
-  return apiRequest('/api/admin/users', {}, { auth: true });
+export async function obtenerTodosLosUsuarios() {
+  return peticionApi('/api/admin/users', {}, { auth: true });
 }
 
-export async function blockUser(userId, blocked = true) {
-  return apiRequest(`/api/admin/users/${userId}/block`, {
+export async function bloquearUsuario(idUsuario, bloqueado = true) {
+  return peticionApi(`/api/admin/users/${idUsuario}/block`, {
     method: 'PUT',
-    body: JSON.stringify({ blocked }),
+    body: JSON.stringify({ bloqueado }),
   }, { auth: true, contentType: true });
 }
 
-export async function updateUser(userId, userData) {
-  return apiRequest(`/api/admin/users/${userId}`, {
+export async function actualizarUsuario(idUsuario, datosUsuario) {
+  return peticionApi(`/api/admin/users/${idUsuario}`, {
     method: 'PUT',
-    body: JSON.stringify(userData),
+    body: JSON.stringify(datosUsuario),
   }, { auth: true, contentType: true });
 }
 
-export async function deleteUser(userId) {
-  return apiRequest(`/api/admin/users/${userId}`, {
+export async function eliminarUsuario(idUsuario) {
+  return peticionApi(`/api/admin/users/${idUsuario}`, {
     method: 'DELETE',
   }, { auth: true });
 }
 
 export default {
-  API_URL,
-  API_FALLBACK_URL,
-  API_URLS,
-  loginUser,
-  registerUser,
-  getAllProducts,
-  getActiveProducts,
-  createProduct,
-  updateProduct,
-  deleteProduct,
-  createOrder,
-  getOrder,
-  getMyOrders,
-  healthCheck,
-  updateProfile,
-  updateProfileAlias,
-  getCurrentUser,
-  getMyFavorites,
-  updateMyFavorites,
-  requestParentLink,
-  getParentLinkRequests,
-  approveParentLinkRequest,
-  rejectParentLinkRequest,
-  createChildOrder,
-  getMyChildOrders,
-  getMyChildOrderDetail,
-  getParentChildOrders,
-  getParentOrderDetail,
-  approveChildOrder,
-  rejectChildOrder,
-  modifyChildOrder,
-  markOrderAsPaid,
-  getOrderHistory,
-  getAdminStatistics,
-  registerDeviceToken,
-  unregisterDeviceToken,
-  getMyNotifications,
-  markNotificationAsRead,
-  getAdminOrderQueue,
-  getFraudLog,
-  getAllUsers,
-  blockUser,
-  updateUser,
-  deleteUser,
+  URL_API,
+  URL_API_RESPALDO,
+  URLS_API,
+  iniciarSesion,
+  registrarUsuario,
+  obtenerTodosLosProductos,
+  obtenerProductosActivos,
+  crearProducto,
+  actualizarProducto,
+  eliminarProducto,
+  crearPedido,
+  obtenerPedido,
+  obtenerMisPedidos,
+  verificarSalud,
+  actualizarPerfil,
+  actualizarAliasPerfil,
+  obtenerUsuarioActual,
+  obtenerMisFavoritos,
+  actualizarMisFavoritos,
+  solicitarVinculoPadre,
+  obtenerSolicitudesVinculoPadre,
+  aprobarSolicitudVinculoPadre,
+  rechazarSolicitudVinculoPadre,
+  crearPedidoHijo,
+  obtenerMisPedidosHijo,
+  obtenerDetalleMiPedidoHijo,
+  obtenerPedidosPadreHijo,
+  obtenerDetallePedidoPadre,
+  aprobarPedidoHijo,
+  rechazarPedidoHijo,
+  modificarPedidoHijo,
+  marcarPedidoComoPagado,
+  obtenerPedidoHistory,
+  obtenerEstadisticasAdmin,
+  registrarTokenDispositivo,
+  unregistrarTokenDispositivo,
+  obtenerMisNotificaciones,
+  marcarNotificacionComoLeida,
+  obtenerColaPedidosAdmin,
+  obtenerRegistroFraude,
+  obtenerTodosLosUsuarios,
+  bloquearUsuario,
+  actualizarUsuario,
+  eliminarUsuario,
 };

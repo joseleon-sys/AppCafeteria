@@ -1,3 +1,4 @@
+// Panel de carrito reutilizable con resumen, cupones y CTA de pago.
 import React, { useState } from 'react';
 import { IonIcon } from '@ionic/react';
 import { remove, add, removeOutline } from 'ionicons/icons';
@@ -19,7 +20,7 @@ const CartPanel = ({
   
   const total = Math.max(0, subtotal - discount + deliveryFee);
 
-  const handleQuantityChange = (itemId, newQuantity) => {
+  const gestionarCambioCantidad = (itemId, newQuantity) => {
     if (newQuantity <= 0) {
       // Eliminar item del carrito
       onUpdateQuantity(itemId, 0);
@@ -28,7 +29,7 @@ const CartPanel = ({
     }
   };
 
-  const handleApplyCoupon = (e) => {
+  const gestionarAplicarCupon = (e) => {
     e.preventDefault();
     if (couponCode.trim()) {
       onApplyCoupon(couponCode.trim());
@@ -95,7 +96,7 @@ const CartPanel = ({
                   <div className="quantity-controls">
                     <button 
                       className="quantity-btn decrease"
-                      onClick={() => handleQuantityChange(item.id, item.quantity - 1)}
+                      onClick={() => gestionarCambioCantidad(item.id, item.quantity - 1)}
                       disabled={item.quantity <= 1}
                     >
                       <IonIcon icon={remove} />
@@ -103,14 +104,14 @@ const CartPanel = ({
                     <span className="quantity">{item.quantity}</span>
                     <button 
                       className="quantity-btn increase"
-                      onClick={() => handleQuantityChange(item.id, item.quantity + 1)}
+                      onClick={() => gestionarCambioCantidad(item.id, item.quantity + 1)}
                     >
                       <IonIcon icon={add} />
                     </button>
                   </div>
                   <button 
                     className="remove-item-btn"
-                    onClick={() => handleQuantityChange(item.id, 0)}
+                    onClick={() => gestionarCambioCantidad(item.id, 0)}
                     title="Eliminar producto"
                   >
                     <IonIcon icon={removeOutline} />
@@ -132,7 +133,7 @@ const CartPanel = ({
           <div className="section-header">
             <h3 className="section-title">Cupones de descuento</h3>
           </div>
-          <form className="coupon-form" onSubmit={handleApplyCoupon}>
+          <form className="coupon-form" onSubmit={gestionarAplicarCupon}>
             <input 
               type="text" 
               placeholder="Introduce tu código de descuento" 

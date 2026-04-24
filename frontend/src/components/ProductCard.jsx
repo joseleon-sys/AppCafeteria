@@ -107,3 +107,4 @@ export default function ProductCard({
     </div>
   );
 }
+// Tarjeta visual de producto dentro del grid del catalogo.

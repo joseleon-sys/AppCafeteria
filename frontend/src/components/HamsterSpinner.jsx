@@ -1,3 +1,4 @@
+// Spinner visual tematico usado durante cargas y procesos largos.
 import React from 'react';
 import './HamsterSpinner.css';
 
@@ -28,3 +29,5 @@ const HamsterSpinner = ({ message = "Procesando...", size = "medium" }) => {
 };
 
 export default HamsterSpinner;
+// Spinner visual tematico usado durante cargas y procesos largos.
+// Spinner visual tematico usado durante cargas y procesos largos.

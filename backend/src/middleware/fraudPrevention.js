@@ -1,17 +1,17 @@
-// Sistema de Fraud Prevention y Logging
+// Sistema de prevencion de fraude y registro de eventos de seguridad.
 
 import { getClientIP } from './rateLimiter.js';
 
-// Helper para registrar eventos de seguridad en fraud_prevention_log
+// Guarda un evento de seguridad para poder auditar despues comportamientos sospechosos.
 export async function logSecurityEvent(supabase, {
-  userId = null,
+  idUsuario = null,
   actionType,
   severity = 'low', // 'low', 'medium', 'high'
   details = {},
   req
 }) {
   if (!supabase) {
-    console.log('[FRAUD LOG]', { userId, actionType, severity, details });
+    console.log('[FRAUD LOG]', { idUsuario, actionType, severity, details });
     return;
   }
   
@@ -22,7 +22,7 @@ export async function logSecurityEvent(supabase, {
     await supabase
       .from('fraud_prevention_log')
       .insert([{
-        user_id: userId,
+        user_id: idUsuario,
         action_type: actionType,
         severity,
         details: JSON.stringify(details),
@@ -34,8 +34,8 @@ export async function logSecurityEvent(supabase, {
   }
 }
 
-// Calcular puntuación de confianza (Trust Score)
-export async function calculateTrustScore(supabase, userId, options = {}) {
+// Calcula una puntuacion de confianza del usuario entre 0 y 100.
+export async function calculateTrustScore(supabase, idUsuario, options = {}) {
   if (!supabase) return 50;
   
   try {
@@ -43,7 +43,7 @@ export async function calculateTrustScore(supabase, userId, options = {}) {
     const { data: user } = await supabase
       .from('users')
       .select('*')
-      .eq('id', userId)
+      .eq('id', idUsuario)
       .single();
     
     if (!user) return 0;
@@ -81,7 +81,7 @@ export async function calculateTrustScore(supabase, userId, options = {}) {
     const { data: fraudEvents } = await supabase
       .from('fraud_prevention_log')
       .select('*')
-      .eq('user_id', userId)
+      .eq('user_id', idUsuario)
       .order('created_at', { ascending: false })
       .limit(50);
     
@@ -98,7 +98,7 @@ export async function calculateTrustScore(supabase, userId, options = {}) {
       const { data: links } = await supabase
         .from('parent_child_links')
         .select('id')
-        .eq('child_id', userId);
+        .eq('child_id', idUsuario);
       
       // Si tiene más de 5 adultos vinculados: muy sospechoso
       if (links && links.length > 5) score -= 30;
@@ -112,20 +112,20 @@ export async function calculateTrustScore(supabase, userId, options = {}) {
   }
 }
 
-// Middleware para verificar trust score mínimo
+// Middleware que bloquea acciones si la confianza del usuario es demasiado baja.
 export function requireTrustScore(minimumScore = 40) {
   return async (req, res, next) => {
-    const userId = req.user?.id;
+    const idUsuario = req.user?.id;
     
-    if (!userId) {
+    if (!idUsuario) {
       return res.status(401).json({ error: 'No autenticado' });
     }
     
-    const score = await calculateTrustScore(req.supabase, userId);
+    const score = await calculateTrustScore(req.supabase, idUsuario);
     
     if (score < minimumScore) {
       await logSecurityEvent(req.supabase, {
-        userId,
+        idUsuario,
         actionType: 'low_trust_score_blocked',
         severity: 'high',
         details: { score, minimumRequired: minimumScore },
@@ -143,7 +143,7 @@ export function requireTrustScore(minimumScore = 40) {
   };
 }
 
-// Validar límites de vinculación padre-hijo
+// Revisa reglas basicas de negocio para evitar vinculos padre-hijo abusivos.
 export async function validateLinkingLimits(supabase, { childId, parentId }) {
   if (!supabase) {
     // Modo mock: permitir

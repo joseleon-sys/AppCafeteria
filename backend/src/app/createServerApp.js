@@ -1,4 +1,6 @@
-import { createAppContext } from '../appContext.js';
+// Este archivo monta la aplicacion Express completa:
+// crea el contexto compartido y registra todas las rutas y manejadores globales.
+import { crearContextoApp } from '../appContext.js';
 import { registerErrorHandler, registerNotFoundHandler, registerSystemRoutes } from '../routes/systemRoutes.js';
 import { registerAuthRoutes } from '../routes/authRoutes.js';
 import { registerOrderRoutes } from '../routes/orderRoutes.js';
@@ -9,9 +11,11 @@ import { registerChildOrderRoutes } from '../routes/childOrderRoutes.js';
 import { registerSentryErrorHandler } from '../observability/sentry.js';
 
 export function createServerApp() {
-  const context = createAppContext();
+  // Construimos una sola vez todo lo comun que las rutas necesitan.
+  const context = crearContextoApp();
   const { app } = context;
 
+  // Aqui se van conectando los distintos grupos de endpoints.
   registerSystemRoutes(app);
   registerAuthRoutes(app, context);
   registerOrderRoutes(app, context);
@@ -23,5 +27,6 @@ export function createServerApp() {
   registerNotFoundHandler(app);
   registerErrorHandler(app);
 
+  // Devolvemos tanto la app como el resto del contexto para arrancar el servidor.
   return context;
 }

@@ -1,5 +1,6 @@
+// Modal para inspeccionar el detalle de un pedido concreto.
 import { useState, useEffect } from 'react';
-import { getParentOrderDetail } from '../lib/api';
+import { obtenerDetallePedidoPadre } from '../lib/api';
 import { showError } from './Toast';
 import './OrderDetailModal.css';
 
@@ -14,7 +15,7 @@ export default function OrderDetailModal({ order, onClose, onRefresh }) {
   const fetchOrderDetail = async () => {
     setLoading(true);
     try {
-      const response = await getParentOrderDetail(order.id);
+      const response = await obtenerDetallePedidoPadre(order.id);
       setFullOrder(response.order);
     } catch (error) {
       console.error('Error fetching order detail:', error);
@@ -159,3 +160,5 @@ export default function OrderDetailModal({ order, onClose, onRefresh }) {
     </div>
   );
 }
+// Modal para inspeccionar el detalle de un pedido concreto.
+// Modal para inspeccionar el detalle de un pedido concreto.

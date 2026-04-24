@@ -1,7 +1,8 @@
+// Sistema global de notificaciones breves tipo toast.
 import React, { useState, useCallback, useEffect } from "react";
 import "./Toast.css";
 
-// Global toast manager
+// Cola global simple para mostrar mensajes desde cualquier parte del frontend.
 let toastQueue = [];
 let toastListeners = [];
 

@@ -1,7 +1,8 @@
+// Lista de solicitudes de vinculacion que un adulto puede aprobar o rechazar.
 import React, { useState, useEffect } from 'react';
 import { showSuccess, showError } from './Toast';
 import { showConfirm, showPrompt } from './Dialog';
-import { approveParentLinkRequest, getParentLinkRequests, rejectParentLinkRequest } from '../lib/api';
+import { aprobarSolicitudVinculoPadre, obtenerSolicitudesVinculoPadre, rechazarSolicitudVinculoPadre } from '../lib/api';
 
 export default function LinkRequestsList({ onChange = null }) {
   const [requests, setRequests] = useState([]);
@@ -14,7 +15,7 @@ export default function LinkRequestsList({ onChange = null }) {
 
   const fetchRequests = async () => {
     try {
-      const data = await getParentLinkRequests();
+      const data = await obtenerSolicitudesVinculoPadre();
       setRequests(data.requests || []);
     } catch (error) {
       console.error('Error al obtener solicitudes:', error);
@@ -24,13 +25,13 @@ export default function LinkRequestsList({ onChange = null }) {
     }
   };
 
-  const handleApprove = async (requestId) => {
+  const handleApprove = async (idSolicitud) => {
     const confirmed = await showConfirm('¿Aprobar esta vinculación?', 'Aprobar vinculación');
     if (!confirmed) return;
 
-    setProcessing(requestId);
+    setProcessing(idSolicitud);
     try {
-      await approveParentLinkRequest(requestId, 20.0);
+      await aprobarSolicitudVinculoPadre(idSolicitud, 20.0);
       showSuccess('Vinculación aprobada correctamente');
       if (typeof onChange === 'function') {
         await onChange();
@@ -44,13 +45,13 @@ export default function LinkRequestsList({ onChange = null }) {
     }
   };
 
-  const handleReject = async (requestId) => {
+  const handleReject = async (idSolicitud) => {
     const reason = await showPrompt('¿Por qué rechazas esta solicitud?', 'Rechazar solicitud', '');
     if (!reason) return;
 
-    setProcessing(requestId);
+    setProcessing(idSolicitud);
     try {
-      await rejectParentLinkRequest(requestId, reason);
+      await rechazarSolicitudVinculoPadre(idSolicitud, reason);
       showSuccess('Vinculación rechazada');
       if (typeof onChange === 'function') {
         await onChange();
@@ -144,3 +145,5 @@ export default function LinkRequestsList({ onChange = null }) {
     </div>
   );
 }
+// Lista de solicitudes de vinculacion que un adulto puede aprobar o rechazar.
+// Lista de solicitudes de vinculacion que un adulto puede aprobar o rechazar.

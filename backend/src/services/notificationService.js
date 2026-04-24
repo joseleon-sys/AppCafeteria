@@ -1,17 +1,20 @@
-let firebaseAdminModulePromise = null;
+// Servicio de notificaciones push y notificaciones internas guardadas en base de datos.
+let promesaModuloFirebaseAdmin = null;
 
-async function loadFirebaseAdmin() {
-  if (!firebaseAdminModulePromise) {
-    firebaseAdminModulePromise = import('firebase-admin').catch((error) => {
+async function cargarFirebaseAdmin() {
+  // Carga dinamica: solo importamos Firebase si realmente se necesita.
+  if (!promesaModuloFirebaseAdmin) {
+    promesaModuloFirebaseAdmin = import('firebase-admin').catch((error) => {
       console.warn('Firebase Admin no disponible:', error?.message || String(error));
       return null;
     });
   }
 
-  return firebaseAdminModulePromise;
+  return promesaModuloFirebaseAdmin;
 }
 
-function parseServiceAccountFromEnv() {
+function parsearCuentaServicioDesdeEnv() {
+  // Lee las credenciales del servicio desde una variable de entorno en formato JSON.
   const raw = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
   if (!raw) return null;
 
@@ -23,26 +26,28 @@ function parseServiceAccountFromEnv() {
   }
 }
 
-async function getFirebaseMessaging() {
-  const admin = await loadFirebaseAdmin();
+async function obtenerMensajeriaFirebase() {
+  // Inicializa Firebase Admin una sola vez y devuelve el servicio de mensajeria.
+  const admin = await cargarFirebaseAdmin();
   if (!admin) return null;
 
   if (!admin.apps.length) {
-    const serviceAccount = parseServiceAccountFromEnv();
-    if (!serviceAccount) {
+    const cuentaServicio = parsearCuentaServicioDesdeEnv();
+    if (!cuentaServicio) {
       console.warn('Firebase Admin desactivado: falta FIREBASE_SERVICE_ACCOUNT_JSON');
       return null;
     }
 
     admin.initializeApp({
-      credential: admin.credential.cert(serviceAccount),
+      credential: admin.credential.cert(cuentaServicio),
     });
   }
 
   return admin.messaging();
 }
 
-function getSupabaseClient(client) {
+function obtenerClienteSupabase(client) {
+  // Centralizamos esta validacion para no repetirla en cada funcion del servicio.
   if (!client) {
     throw new Error('Supabase no esta configurado para notificaciones');
   }
@@ -50,24 +55,25 @@ function getSupabaseClient(client) {
   return client;
 }
 
-export async function registerDeviceToken(supabase, payload = {}) {
-  const client = getSupabaseClient(supabase);
+export async function registrarTokenDispositivo(supabase, payload = {}) {
+  // Guarda o actualiza el token FCM de un dispositivo para poder enviar push despues.
+  const client = obtenerClienteSupabase(supabase);
   const {
-    userId,
+    idUsuario,
     token,
     platform = 'unknown',
     deviceName = null,
     appVersion = null,
   } = payload;
 
-  if (!userId || !token) {
-    throw new Error('userId y token son obligatorios');
+  if (!idUsuario || !token) {
+    throw new Error('idUsuario y token son obligatorios');
   }
 
   const { data, error } = await client
     .from('user_device_tokens')
     .upsert({
-      user_id: userId,
+      user_id: idUsuario,
       fcm_token: token,
       platform,
       device_name: deviceName,
@@ -84,12 +90,13 @@ export async function registerDeviceToken(supabase, payload = {}) {
   return data || null;
 }
 
-export async function deactivateDeviceToken(supabase, payload = {}) {
-  const client = getSupabaseClient(supabase);
-  const { userId, token } = payload;
+export async function desactivarTokenDispositivo(supabase, payload = {}) {
+  // Marca un token como inactivo, por ejemplo al cerrar sesion o desinstalar.
+  const client = obtenerClienteSupabase(supabase);
+  const { idUsuario, token } = payload;
 
-  if (!userId || !token) {
-    throw new Error('userId y token son obligatorios');
+  if (!idUsuario || !token) {
+    throw new Error('idUsuario y token son obligatorios');
   }
 
   const { data, error } = await client
@@ -98,7 +105,7 @@ export async function deactivateDeviceToken(supabase, payload = {}) {
       is_active: false,
       last_seen_at: new Date().toISOString(),
     })
-    .eq('user_id', userId)
+    .eq('user_id', idUsuario)
     .eq('fcm_token', token)
     .select('id');
 
@@ -106,18 +113,19 @@ export async function deactivateDeviceToken(supabase, payload = {}) {
   return Array.isArray(data) && data.length > 0;
 }
 
-export async function storeNotification(supabase, payload = {}) {
-  const client = getSupabaseClient(supabase);
-  const { userId, type, title, body, data = {} } = payload;
+export async function guardarNotificacion(supabase, payload = {}) {
+  // Ademas del push, la app guarda una copia en base de datos para el historial.
+  const client = obtenerClienteSupabase(supabase);
+  const { idUsuario, type, title, body, data = {} } = payload;
 
-  if (!userId || !type || !title || !body) {
-    throw new Error('userId, type, title y body son obligatorios');
+  if (!idUsuario || !type || !title || !body) {
+    throw new Error('idUsuario, type, title y body son obligatorios');
   }
 
   const { data: notification, error } = await client
     .from('app_notifications')
     .insert({
-      user_id: userId,
+      user_id: idUsuario,
       type,
       title,
       body,
@@ -131,13 +139,14 @@ export async function storeNotification(supabase, payload = {}) {
   return notification || null;
 }
 
-export async function listUserNotifications(supabase, userId, limit = 50) {
-  const client = getSupabaseClient(supabase);
+export async function listarNotificacionesUsuario(supabase, idUsuario, limit = 50) {
+  // Devuelve las notificaciones mas recientes del usuario.
+  const client = obtenerClienteSupabase(supabase);
 
   const { data, error } = await client
     .from('app_notifications')
     .select('id, user_id, type, title, body, data, is_read, created_at, read_at')
-    .eq('user_id', userId)
+    .eq('user_id', idUsuario)
     .order('created_at', { ascending: false })
     .limit(limit);
 
@@ -145,8 +154,8 @@ export async function listUserNotifications(supabase, userId, limit = 50) {
   return data || [];
 }
 
-export async function markNotificationAsRead(supabase, userId, notificationId) {
-  const client = getSupabaseClient(supabase);
+export async function marcarNotificacionComoLeida(supabase, idUsuario, idNotificacion) {
+  const client = obtenerClienteSupabase(supabase);
 
   const { data, error } = await client
     .from('app_notifications')
@@ -154,16 +163,16 @@ export async function markNotificationAsRead(supabase, userId, notificationId) {
       is_read: true,
       read_at: new Date().toISOString(),
     })
-    .eq('user_id', userId)
-    .eq('id', notificationId)
+    .eq('user_id', idUsuario)
+    .eq('id', idNotificacion)
     .select('id');
 
   if (error) throw error;
   return Array.isArray(data) && data.length > 0;
 }
 
-async function deactivateInvalidTokens(supabase, tokens = []) {
-  const client = getSupabaseClient(supabase);
+async function desactivarTokensInvalidos(supabase, tokens = []) {
+  const client = obtenerClienteSupabase(supabase);
   if (!tokens.length) return;
 
   const { error } = await client
@@ -177,36 +186,36 @@ async function deactivateInvalidTokens(supabase, tokens = []) {
   if (error) throw error;
 }
 
-export async function sendPushToUser(supabase, payload = {}) {
-  const client = getSupabaseClient(supabase);
-  const { userId, type, title, body, data = {}, storeInInbox = true } = payload;
+export async function enviarPushAUsuario(supabase, payload = {}) {
+  const client = obtenerClienteSupabase(supabase);
+  const { idUsuario, type, title, body, data = {}, storeInInbox = true } = payload;
 
-  if (!userId || !type || !title || !body) {
-    throw new Error('userId, type, title y body son obligatorios');
+  if (!idUsuario || !type || !title || !body) {
+    throw new Error('idUsuario, type, title y body son obligatorios');
   }
 
-  const inboxEntry = storeInInbox
-    ? await storeNotification(client, { userId, type, title, body, data })
+  const entradaBandeja = storeInInbox
+    ? await guardarNotificacion(client, { idUsuario, type, title, body, data })
     : null;
 
-  const { data: tokenRows, error: tokenError } = await client
+  const { data: filasTokens, error: tokenError } = await client
     .from('user_device_tokens')
     .select('fcm_token')
-    .eq('user_id', userId)
+    .eq('user_id', idUsuario)
     .eq('is_active', true)
     .order('last_seen_at', { ascending: false });
 
   if (tokenError) throw tokenError;
 
-  const tokens = (tokenRows || []).map((row) => row.fcm_token).filter(Boolean);
+  const tokens = (filasTokens || []).map((row) => row.fcm_token).filter(Boolean);
   if (!tokens.length) {
-    return { delivered: false, reason: 'no_active_tokens', notification: inboxEntry };
+    return { delivered: false, reason: 'no_active_tokens', notification: entradaBandeja };
   }
 
-  const messaging = await getFirebaseMessaging();
+  const messaging = await obtenerMensajeriaFirebase();
   if (!messaging) {
-    console.info(`Push omitida para user ${userId}: Firebase Admin no configurado`);
-    return { delivered: false, reason: 'firebase_not_configured', notification: inboxEntry };
+    console.info(`Push omitida para user ${idUsuario}: Firebase Admin no configurado`);
+    return { delivered: false, reason: 'firebase_not_configured', notification: entradaBandeja };
   }
 
   const response = await messaging.sendEachForMulticast({
@@ -230,24 +239,24 @@ export async function sendPushToUser(supabase, payload = {}) {
     },
   });
 
-  const invalidTokens = [];
+  const tokensInvalidos = [];
   response.responses.forEach((item, index) => {
     if (!item.success) {
       const code = item.error?.code || '';
       if (code.includes('registration-token-not-registered') || code.includes('invalid-registration-token')) {
-        invalidTokens.push(tokens[index]);
+        tokensInvalidos.push(tokens[index]);
       }
     }
   });
 
-  if (invalidTokens.length) {
-    await deactivateInvalidTokens(client, invalidTokens);
+  if (tokensInvalidos.length) {
+    await desactivarTokensInvalidos(client, tokensInvalidos);
   }
 
   return {
     delivered: response.successCount > 0,
     successCount: response.successCount,
     failureCount: response.failureCount,
-    notification: inboxEntry,
+    notification: entradaBandeja,
   };
 }

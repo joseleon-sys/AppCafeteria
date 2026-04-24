@@ -1,16 +1,17 @@
+// Panel de administracion para gestionar productos, usuarios, fraude y pedidos.
 import React, { useEffect, useState } from "react";
 import {
-  getAllProducts,
-  createProduct,
-  updateProduct,
-  deleteProduct,
-  getAllUsers,
-  blockUser,
-  updateUser,
-  deleteUser,
-  getAdminStatistics,
-  getFraudLog,
-  getAdminOrderQueue
+  obtenerTodosLosProductos,
+  crearProducto,
+  actualizarProducto,
+  eliminarProducto,
+  obtenerTodosLosUsuarios,
+  bloquearUsuario,
+  actualizarUsuario,
+  eliminarUsuario,
+  obtenerEstadisticasAdmin,
+  obtenerRegistroFraude,
+  obtenerColaPedidosAdmin
 } from "../lib/api";
 import "./AdminDashboard.css";
 
@@ -45,18 +46,20 @@ export default function AdminDashboard({ onLogout }) {
 
   // Cargar datos al montar
   useEffect(() => {
-    loadDashboardData();
+    // Carga inicial de datos del panel al entrar como administrador.
+    cargarDatosPanel();
   }, []);
 
-  const loadDashboardData = async () => {
+  const cargarDatosPanel = async () => {
+    // Reune en paralelo la informacion base del dashboard.
     setLoading(true);
     try {
       const [productsRes, statsRes, fraudRes, usersRes, ordersRes] = await Promise.all([
-        getAllProducts(),
-        fetchStatistics(),
-        fetchFraudLog(),
-        fetchUsers(),
-        fetchOrders(),
+        obtenerTodosLosProductos(),
+        cargarEstadisticas(),
+        cargarRegistroFraude(),
+        cargarUsuarios(),
+        cargarPedidos(),
       ]);
       
       setProducts(productsRes.data || []);
@@ -71,9 +74,9 @@ export default function AdminDashboard({ onLogout }) {
     }
   };
 
-  const fetchStatistics = async () => {
+  const cargarEstadisticas = async () => {
     try {
-      return await getAdminStatistics();
+      return await obtenerEstadisticasAdmin();
     } catch (err) {
       console.error('Error en estadísticas:', err);
       return {
@@ -91,9 +94,9 @@ export default function AdminDashboard({ onLogout }) {
     }
   };
 
-  const fetchFraudLog = async () => {
+  const cargarRegistroFraude = async () => {
     try {
-      const response = await getFraudLog();
+      const response = await obtenerRegistroFraude();
       return response.logs || [];
     } catch (err) {
       console.error('Error en fraude log:', err);
@@ -101,9 +104,9 @@ export default function AdminDashboard({ onLogout }) {
     }
   };
 
-  const fetchUsers = async () => {
+  const cargarUsuarios = async () => {
     try {
-      const data = await getAllUsers();
+      const data = await obtenerTodosLosUsuarios();
       console.log('📥 Usuarios cargados:', data);
 
       return data.users || [];
@@ -113,9 +116,9 @@ export default function AdminDashboard({ onLogout }) {
     }
   };
 
-  const fetchOrders = async () => {
+  const cargarPedidos = async () => {
     try {
-      const data = await getAdminOrderQueue();
+      const data = await obtenerColaPedidosAdmin();
       return data.orders || [];
     } catch (err) {
       console.error('Error en órdenes:', err);
@@ -123,13 +126,13 @@ export default function AdminDashboard({ onLogout }) {
     }
   };
 
-  const handleLogout = () => {
+  const gestionarCierreSesion = () => {
     localStorage.removeItem('cafeteria_user');
     localStorage.removeItem('cafeteria_token');
     if (onLogout) onLogout();
   };
 
-  const handleEditProduct = (product) => {
+  const gestionarEditarProducto = (product) => {
     setEditProduct(product);
     setFormData({
       name: product.name,
@@ -141,40 +144,40 @@ export default function AdminDashboard({ onLogout }) {
     });
   };
 
-  const handleSave = async () => {
+  const gestionarGuardar = async () => {
     try {
       if (editProduct) {
-        await updateProduct(editProduct.id, formData);
+        await actualizarProducto(editProduct.id, formData);
       } else {
-        await createProduct(formData);
+        await crearProducto(formData);
       }
-      handleCancel();
-      await loadDashboardData();
+      gestionarCancelar();
+      await cargarDatosPanel();
     } catch (error) {
       console.error('Error al guardar:', error);
     }
   };
 
-  const handleDeleteProduct = async (id) => {
+  const gestionarEliminarProducto = async (id) => {
     if (window.confirm('¿Eliminar este producto?')) {
       try {
-        await deleteProduct(id, false);
-        await loadDashboardData();
+        await eliminarProducto(id, false);
+        await cargarDatosPanel();
       } catch (error) {
         console.error('Error al eliminar:', error);
       }
     }
   };
 
-  const handleCancel = () => {
+  const gestionarCancelar = () => {
     setEditProduct(null);
     setFormData({ name: '', description: '', price: 0, category: 'cafes', active: true, image_url: '' });
   };
 
-  const handleBlockUser = async (userId, shouldBlock) => {
+  const gestionarBloquearUsuario = async (idUsuario, shouldBlock) => {
     try {
-      await blockUser(userId, shouldBlock);
-      await loadDashboardData();
+      await bloquearUsuario(idUsuario, shouldBlock);
+      await cargarDatosPanel();
       setBlockingUser(null);
     } catch (error) {
       console.error('Error al bloquear usuario:', error);
@@ -182,7 +185,7 @@ export default function AdminDashboard({ onLogout }) {
     }
   };
 
-  const handleEditUser = (user) => {
+  const gestionarEditarUsuario = (user) => {
     setEditingUser({
       ...user,
       editName: user.name,
@@ -191,19 +194,19 @@ export default function AdminDashboard({ onLogout }) {
     });
   };
 
-  const handleSaveUser = async () => {
+  const gestionarGuardarUsuario = async () => {
     if (!editingUser.editName.trim() || !editingUser.editEmail.trim()) {
       alert('Nombre y email son requeridos');
       return;
     }
 
     try {
-      await updateUser(editingUser.id, {
+      await actualizarUsuario(editingUser.id, {
         name: editingUser.editName,
         email: editingUser.editEmail,
         role: editingUser.editRole
       });
-      await loadDashboardData();
+      await cargarDatosPanel();
       setEditingUser(null);
       alert('Usuario actualizado correctamente');
     } catch (error) {
@@ -212,14 +215,14 @@ export default function AdminDashboard({ onLogout }) {
     }
   };
 
-  const handleDeleteUser = async (userId, userName) => {
+  const gestionarEliminarUsuario = async (idUsuario, userName) => {
     if (!window.confirm(`¿Estás seguro de que deseas eliminar a ${userName}? Esta acción no se puede deshacer.`)) {
       return;
     }
 
     try {
-      await deleteUser(userId);
-      await loadDashboardData();
+      await eliminarUsuario(idUsuario);
+      await cargarDatosPanel();
       alert('Usuario eliminado correctamente');
     } catch (error) {
       console.error('Error al eliminar usuario:', error);
@@ -227,7 +230,7 @@ export default function AdminDashboard({ onLogout }) {
     }
   };
 
-  const renderDashboard = () => {
+  const renderizarPanel = () => {
     if (!statistics) return <div>Cargando estadísticas...</div>;
 
     return (
@@ -368,8 +371,8 @@ export default function AdminDashboard({ onLogout }) {
                 </div>
               </div>
               <div className="product-actions">
-                <button className="btn-edit" onClick={() => handleEditProduct(p)}>Editar</button>
-                <button className="btn-delete" onClick={() => handleDeleteProduct(p.id)}>Eliminar</button>
+                <button className="btn-edit" onClick={() => gestionarEditarProducto(p)}>Editar</button>
+                <button className="btn-delete" onClick={() => gestionarEliminarProducto(p.id)}>Eliminar</button>
               </div>
             </div>
           ))}
@@ -378,7 +381,7 @@ export default function AdminDashboard({ onLogout }) {
     );
   };
 
-  const renderFraud = () => {
+  const renderizarFraude = () => {
     return (
       <div className="section-container">
         <h2>Log de Fraude</h2>
@@ -400,7 +403,7 @@ export default function AdminDashboard({ onLogout }) {
     );
   };
 
-  const renderUsuarios = () => {
+  const renderizarUsuarios = () => {
     return (
       <div className="section-container">
         <h2>Usuarios Registrados</h2>
@@ -419,7 +422,7 @@ export default function AdminDashboard({ onLogout }) {
             </div>
             
             {users.map(user => (
-              <div key={user.id} className={`users-row ${user.blocked ? 'blocked' : ''}`}>
+              <div key={user.id} className={`users-row ${user.bloqueado ? 'bloqueado' : ''}`}>
                 <div className="users-col-email">{user.email}</div>
                 <div className="users-col-name">{user.name}</div>
                 <div className="users-col-role">
@@ -437,21 +440,21 @@ export default function AdminDashboard({ onLogout }) {
                 <div className="users-col-actions">
                   <button 
                     className="btn-edit"
-                    onClick={() => handleEditUser(user)}
+                    onClick={() => gestionarEditarUsuario(user)}
                     style={{marginRight: 8}}
                   >
                     Editar
                   </button>
                   <button 
-                    className={`btn-danger ${user.blocked ? 'danger-unblock' : ''}`}
+                    className={`btn-danger ${user.bloqueado ? 'danger-unblock' : ''}`}
                     onClick={() => setBlockingUser(user)}
                     style={{marginRight: 8}}
                   >
-                    {user.blocked ? 'Desbloquear' : 'Bloquear'}
+                    {user.bloqueado ? 'Desbloquear' : 'Bloquear'}
                   </button>
                   <button 
                     className="btn-delete"
-                    onClick={() => handleDeleteUser(user.id, user.name)}
+                    onClick={() => gestionarEliminarUsuario(user.id, user.name)}
                   >
                     Eliminar
                   </button>
@@ -464,7 +467,7 @@ export default function AdminDashboard({ onLogout }) {
     );
   };
 
-  const renderKDS = () => {
+  const renderizarKds = () => {
     const pendingOrders = orders.filter((order) => order.status === 'pending' || order.status === 'approved');
     
     return (
@@ -650,7 +653,7 @@ export default function AdminDashboard({ onLogout }) {
           ))}
         </nav>
 
-        <button className="btn-logout" onClick={handleLogout}>
+        <button className="btn-logout" onClick={gestionarCierreSesion}>
           Cerrar Sesión
         </button>
       </aside>
@@ -672,18 +675,18 @@ export default function AdminDashboard({ onLogout }) {
         </header>
 
         <div className="admin-content">
-          {section === 'dashboard' && renderDashboard()}
+          {section === 'dashboard' && renderizarPanel()}
           {section === 'estadisticas' && renderEstadisticas()}
           {section === 'productos' && renderProductos()}
-          {section === 'fraude' && renderFraud()}
-          {section === 'usuarios' && renderUsuarios()}
-          {section === 'kds' && renderKDS()}
+          {section === 'fraude' && renderizarFraude()}
+          {section === 'usuarios' && renderizarUsuarios()}
+          {section === 'kds' && renderizarKds()}
         </div>
       </main>
 
       {/* Product Edit Modal */}
       {editProduct !== null && (
-        <div className="modal-overlay" onClick={handleCancel}>
+        <div className="modal-overlay" onClick={gestionarCancelar}>
           <div className="modal-content" onClick={e => e.stopPropagation()}>
             <h2>{editProduct?.id ? 'Editar Producto' : 'Nuevo Producto'}</h2>
             
@@ -752,8 +755,8 @@ export default function AdminDashboard({ onLogout }) {
             </div>
 
             <div className="modal-actions">
-              <button className="btn-secondary" onClick={handleCancel}>Cancelar</button>
-              <button className="btn-primary" onClick={handleSave}>Guardar</button>
+              <button className="btn-secondary" onClick={gestionarCancelar}>Cancelar</button>
+              <button className="btn-primary" onClick={gestionarGuardar}>Guardar</button>
             </div>
           </div>
         </div>
@@ -800,7 +803,7 @@ export default function AdminDashboard({ onLogout }) {
 
             <div className="modal-actions">
               <button className="btn-secondary" onClick={() => setEditingUser(null)}>Cancelar</button>
-              <button className="btn-primary" onClick={handleSaveUser}>Guardar</button>
+              <button className="btn-primary" onClick={gestionarGuardarUsuario}>Guardar</button>
             </div>
           </div>
         </div>
@@ -810,9 +813,9 @@ export default function AdminDashboard({ onLogout }) {
       {blockingUser && (
         <div className="modal-overlay" onClick={() => setBlockingUser(null)}>
           <div className="modal-content" onClick={e => e.stopPropagation()}>
-            <h2>{blockingUser.blocked ? 'Desbloquear Usuario' : 'Bloquear Usuario'}</h2>
+            <h2>{blockingUser.bloqueado ? 'Desbloquear Usuario' : 'Bloquear Usuario'}</h2>
             <p style={{color: '#666', marginTop: 16}}>
-              {blockingUser.blocked 
+              {blockingUser.bloqueado 
                 ? `¿Desbloquear a ${blockingUser.name} (${blockingUser.email})?` 
                 : `¿Bloquear a ${blockingUser.name} (${blockingUser.email})? No podrá acceder a la aplicación.`
               }
@@ -820,10 +823,10 @@ export default function AdminDashboard({ onLogout }) {
             <div className="modal-actions" style={{marginTop: 24}}>
               <button className="btn-secondary" onClick={() => setBlockingUser(null)}>Cancelar</button>
               <button 
-                className={blockingUser.blocked ? "btn-primary" : "btn-danger"}
-                onClick={() => handleBlockUser(blockingUser.id, !blockingUser.blocked)}
+                className={blockingUser.bloqueado ? "btn-primary" : "btn-danger"}
+                onClick={() => gestionarBloquearUsuario(blockingUser.id, !blockingUser.bloqueado)}
               >
-                {blockingUser.blocked ? 'Desbloquear' : 'Bloquear'}
+                {blockingUser.bloqueado ? 'Desbloquear' : 'Bloquear'}
               </button>
             </div>
           </div>

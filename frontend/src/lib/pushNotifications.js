@@ -1,17 +1,19 @@
+// Integracion del frontend con notificaciones push de Capacitor.
 import { showInfo } from '../components/Toast';
-import { registerDeviceToken } from './api';
+import { registrarTokenDispositivo } from './api';
 
-function getPushPlugin() {
+function obtenerPluginPush() {
+  // Devuelve el plugin si la app corre en entorno con Capacitor.
   return globalThis?.Capacitor?.Plugins?.PushNotifications || null;
 }
 
-function getPlatformLabel() {
+function obtenerEtiquetaPlataforma() {
   const platform = globalThis?.Capacitor?.getPlatform?.();
   if (platform) return platform;
   return 'web';
 }
 
-function cacheRegisteredToken(token) {
+function guardarTokenRegistrado(token) {
   try {
     localStorage.setItem('cafeteria_push_token', token);
   } catch {
@@ -19,7 +21,7 @@ function cacheRegisteredToken(token) {
   }
 }
 
-function getCachedToken() {
+function obtenerTokenGuardadoPush() {
   try {
     return localStorage.getItem('cafeteria_push_token');
   } catch {
@@ -27,23 +29,24 @@ function getCachedToken() {
   }
 }
 
-let listenersBound = false;
+let eventosVinculados = false;
 
-function bindPushListeners(plugin) {
-  if (!plugin || listenersBound) return;
+function vincularEventosPush(plugin) {
+  // Registra listeners una sola vez para token, errores y notificaciones recibidas.
+  if (!plugin || eventosVinculados) return;
 
-  listenersBound = true;
+  eventosVinculados = true;
 
   plugin.addListener?.('registration', async (token) => {
     const value = token?.value;
     if (!value) return;
 
-    cacheRegisteredToken(value);
+    guardarTokenRegistrado(value);
 
     try {
-      await registerDeviceToken({
+      await registrarTokenDispositivo({
         token: value,
-        platform: getPlatformLabel(),
+        platform: obtenerEtiquetaPlataforma(),
         deviceName: globalThis?.navigator?.userAgent || 'Capacitor device',
         appVersion: import.meta.env.VITE_APP_VERSION || 'dev',
       });
@@ -70,16 +73,17 @@ function bindPushListeners(plugin) {
   });
 }
 
-export async function bootstrapPushNotifications() {
-  const plugin = getPushPlugin();
+export async function inicializarNotificacionesPush() {
+  // Pide permisos, registra el dispositivo y devuelve el estado final del flujo.
+  const plugin = obtenerPluginPush();
   if (!plugin) {
     return { enabled: false, reason: 'plugin_unavailable' };
   }
 
-  bindPushListeners(plugin);
+  vincularEventosPush(plugin);
 
-  const permissionStatus = await plugin.requestPermissions?.();
-  if (permissionStatus?.receive !== 'granted') {
+  const estadoPermiso = await plugin.requestPermissions?.();
+  if (estadoPermiso?.receive !== 'granted') {
     return { enabled: false, reason: 'permission_denied' };
   }
 
@@ -87,6 +91,6 @@ export async function bootstrapPushNotifications() {
 
   return {
     enabled: true,
-    cachedToken: getCachedToken(),
+    tokenGuardado: obtenerTokenGuardadoPush(),
   };
 }

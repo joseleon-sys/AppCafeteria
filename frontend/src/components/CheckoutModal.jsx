@@ -1,7 +1,8 @@
+// Modal de confirmacion final antes de enviar al usuario al flujo de pago.
 import React, { useState } from "react";
 import { useCart } from "../lib/CartContext";
 import { showError } from "./Toast";
-import { createCheckoutSession } from "../lib/api";
+import { crearSesionDePago } from "../lib/api";
 import "./CheckoutModal.css";
 
 export default function CheckoutModal({ isOpen, onClose, user }) {
@@ -11,7 +12,7 @@ export default function CheckoutModal({ isOpen, onClose, user }) {
   const subtotal = cartItems.reduce((sum, item) => sum + (item.totalPrice || item.price * item.quantity), 0);
   const finalTotal = total;
 
-  const handleQuantityChange = (itemId, newQuantity) => {
+  const gestionarCambioCantidad = (itemId, newQuantity) => {
     if (newQuantity <= 0) {
       removeItem(itemId);
     } else {
@@ -19,11 +20,12 @@ export default function CheckoutModal({ isOpen, onClose, user }) {
     }
   };
 
-  const handleRemoveItem = (itemId) => {
+  const gestionarEliminarItem = (itemId) => {
     removeItem(itemId);
   };
 
-  const handleCheckout = async () => {
+  const gestionarPago = async () => {
+    // Valida el contexto actual y delega en backend la creacion de la sesion de pago.
     if (cartItems.length === 0) {
       showError('Agrega al menos un producto');
       return;
@@ -52,7 +54,7 @@ export default function CheckoutModal({ isOpen, onClose, user }) {
         quantity: item.quantity,
       }));
 
-      const data = await createCheckoutSession(itemsPayload);
+      const data = await crearSesionDePago(itemsPayload);
 
       if (data?.url) {
         window.location.href = data.url;
@@ -106,7 +108,7 @@ export default function CheckoutModal({ isOpen, onClose, user }) {
                     <div className="quantity-controls">
                       <button
                         className="qty-btn"
-                        onClick={() => handleQuantityChange(item.id, item.quantity - 1)}
+                        onClick={() => gestionarCambioCantidad(item.id, item.quantity - 1)}
                         title="Disminuir cantidad"
                       >
                         -
@@ -114,7 +116,7 @@ export default function CheckoutModal({ isOpen, onClose, user }) {
                       <span className="product-qty">{item.quantity}</span>
                       <button
                         className="qty-btn"
-                        onClick={() => handleQuantityChange(item.id, item.quantity + 1)}
+                        onClick={() => gestionarCambioCantidad(item.id, item.quantity + 1)}
                         title="Aumentar cantidad"
                       >
                         +
@@ -122,7 +124,7 @@ export default function CheckoutModal({ isOpen, onClose, user }) {
                     </div>
                     <button
                       className="remove-btn"
-                      onClick={() => handleRemoveItem(item.id)}
+                      onClick={() => gestionarEliminarItem(item.id)}
                       title="Eliminar producto"
                     >
                       Eliminar
@@ -149,7 +151,7 @@ export default function CheckoutModal({ isOpen, onClose, user }) {
         <div className="checkout-footer">
           <button
             className="checkout-btn"
-            onClick={handleCheckout}
+            onClick={gestionarPago}
             disabled={isProcessing || cartItems.length === 0}
           >
             {isProcessing ? "Procesando..." : "Confirmar y Pagar"}

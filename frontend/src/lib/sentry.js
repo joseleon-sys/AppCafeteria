@@ -1,12 +1,15 @@
+// Inicializacion de Sentry en el frontend para errores y trazas del navegador.
 import * as Sentry from '@sentry/react';
 
 function parseSampleRate(value, fallback) {
+  // Asegura que los porcentajes de muestreo esten dentro del rango valido.
   const parsed = Number.parseFloat(value);
   if (!Number.isFinite(parsed)) return fallback;
   return Math.min(Math.max(parsed, 0), 1);
 }
 
 function getTracePropagationTargets() {
+  // Lista los dominios a los que Sentry puede propagar contexto de trazas.
   return [
     import.meta.env.VITE_API_URL,
     import.meta.env.VITE_API_FALLBACK_URL,

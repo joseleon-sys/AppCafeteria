@@ -1,3 +1,4 @@
+// Pagina completa del carrito para la version Ionic o navegacion por rutas.
 import React from 'react';
 import { 
   IonContent, 
@@ -13,7 +14,7 @@ import { arrowBack, checkmark, close } from 'ionicons/icons';
 import { useHistory } from 'react-router-dom';
 import CartPanel from '../components/CartPanel';
 import { useCart } from '../lib/CartContext';
-import { createCheckoutSession } from '../lib/api';
+import { crearSesionDePago } from '../lib/api';
 import './CartPage.css';
 
 const CartPage = () => {
@@ -43,7 +44,7 @@ const CartPage = () => {
   };
 
   // Manejar cambios de cantidad
-  const handleUpdateQuantity = (itemId, newQuantity) => {
+  const gestionarActualizarCantidad = (itemId, newQuantity) => {
     const item = cartItems.find(item => item.id === itemId);
     
     if (newQuantity === 0) {
@@ -58,7 +59,7 @@ const CartPage = () => {
   };
 
   // Aplicar cupón de descuento
-  const handleApplyCoupon = (couponCode) => {
+  const gestionarAplicarCupon = (couponCode) => {
     const result = applyCoupon(couponCode);
     
     if (result.success) {
@@ -69,7 +70,8 @@ const CartPage = () => {
   };
 
   // Procesar checkout
-  const handleCheckout = async () => {
+  const gestionarPago = async () => {
+    // Ejecuta el mismo flujo de pago del modal, pero en una pagina dedicada.
     if (cartItems.length === 0) {
       showNotification('Tu carrito está vacío', 'warning');
       return;
@@ -101,7 +103,7 @@ const CartPage = () => {
         quantity: item.quantity
       }));
 
-      const data = await createCheckoutSession(itemsPayload);
+      const data = await crearSesionDePago(itemsPayload);
 
       if (data?.url) {
         window.location.href = data.url;
@@ -167,12 +169,12 @@ const CartPage = () => {
           <div className="cart-panel-wrapper">
             <CartPanel
               cartItems={cartItems}
-              onUpdateQuantity={handleUpdateQuantity}
-              onApplyCoupon={handleApplyCoupon}
+              onUpdateQuantity={gestionarActualizarCantidad}
+              onApplyCoupon={gestionarAplicarCupon}
               subtotal={subtotal}
               discount={discount}
               deliveryFee={deliveryFee}
-              onCheckout={handleCheckout}
+              onCheckout={gestionarPago}
               isLoading={isProcessingOrder}
               loadingMessage="Preparando tu delicioso pedido..."
             />

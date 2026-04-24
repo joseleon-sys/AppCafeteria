@@ -1,5 +1,6 @@
+// Variante de pantalla de login mas sencilla o antigua del proyecto.
 import React, { useState } from "react";
-import { loginUser } from "../lib/api";
+import { iniciarSesion } from "../lib/api";
 
 export default function LoginScreen({ onLogin }) {
   const [email, setEmail] = useState("");
@@ -7,13 +8,13 @@ export default function LoginScreen({ onLogin }) {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
-  async function handleSubmit(e) {
+  async function gestionarEnvio(e) {
     e.preventDefault();
     setError("");
     setLoading(true);
 
     try {
-      const data = await loginUser({ email, password });
+      const data = await iniciarSesion({ email, password });
       localStorage.setItem('cafeteria_token', data.token);
       onLogin && onLogin(data.user);
     } catch (err) {
@@ -31,7 +32,7 @@ export default function LoginScreen({ onLogin }) {
         </div>
         <h1>CafeteriaApp</h1>
         <p className="subtitle">Bienvenido — inicia sesión con tu cuenta real</p>
-        <form id="login-form" aria-label="Formulario de inicio de sesión" onSubmit={handleSubmit}>
+        <form id="login-form" aria-label="Formulario de inicio de sesión" onSubmit={gestionarEnvio}>
           <label htmlFor="login-email" className="sr-only">Correo electrónico</label>
           <input
             id="login-email"
@@ -66,3 +67,5 @@ export default function LoginScreen({ onLogin }) {
     </main>
   );
 }
+// Variante de pantalla de login mas sencilla o antigua del proyecto.
+// Variante de pantalla de login mas sencilla o antigua del proyecto.

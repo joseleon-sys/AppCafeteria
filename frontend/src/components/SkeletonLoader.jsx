@@ -1,3 +1,4 @@
+// Placeholders de carga para evitar saltos visuales mientras llegan datos.
 import React from "react";
 import "./SkeletonLoader.css";
 

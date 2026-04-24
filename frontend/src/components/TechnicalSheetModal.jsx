@@ -1,3 +1,4 @@
+// Modal con la ficha tecnica y nutricional de un producto.
 import React from 'react';
 import './TechnicalSheetModal.css';
 

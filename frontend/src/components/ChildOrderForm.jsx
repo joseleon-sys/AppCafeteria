@@ -1,6 +1,7 @@
+// Formulario alternativo para que un menor envie un pedido pendiente de aprobacion.
 import { useState } from 'react';
 import { useCart } from '../lib/useCart';
-import { createChildOrder } from '../lib/api';
+import { crearPedidoHijo } from '../lib/api';
 import { showSuccess, showError } from './Toast';
 import './ChildOrderForm.css';
 
@@ -13,7 +14,8 @@ export default function ChildOrderForm({ user, onOrderCreated }) {
   const tax = total * 0.05;
   const grandTotal = total + tax;
 
-  const handleSubmit = async (e) => {
+  const gestionarEnvio = async (e) => {
+    // Convierte el carrito actual al formato que espera el backend para pedidos infantiles.
     e.preventDefault();
 
     if (cart.length === 0) {
@@ -34,7 +36,7 @@ export default function ChildOrderForm({ user, onOrderCreated }) {
         quantity: item.quantity
       }));
 
-      const response = await createChildOrder(items, notes);
+      const response = await crearPedidoHijo(items, notes);
       
       showSuccess('✅ Pedido enviado a tu padre para aprobación');
       clearCart();
@@ -90,7 +92,7 @@ export default function ChildOrderForm({ user, onOrderCreated }) {
         </div>
       </div>
 
-      <form onSubmit={handleSubmit}>
+      <form onSubmit={gestionarEnvio}>
         <div className="form-group">
           <label htmlFor="notes">Notas (opcional)</label>
           <textarea

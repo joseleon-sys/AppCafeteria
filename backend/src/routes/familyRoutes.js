@@ -1,59 +1,63 @@
+// Rutas para gestionar la relacion padre-hijo dentro de la aplicacion.
 export function registerFamilyRoutes(app, deps) {
   const {
     supabase,
-    authenticateToken,
+    autenticarToken,
     linkingRateLimiter,
-    isParentCapableUser,
-    generateParentToken,
-    normalizeRelatedUser,
+    puedeActuarComoPadre,
+    generarTokenPadre,
+    normalizarUsuarioRelacionado,
     validateLinkingLimits,
     logSecurityEvent,
-    notifyUserSafely,
-    getUserDisplayName,
+    notificarUsuarioSinFallo,
+    obtenerNombreVisibleUsuario,
   } = deps;
 
   function requireSupabase(res) {
+    // Respuesta reutilizable cuando la base de datos no esta disponible.
     return res.status(503).json({ error: 'Supabase no esta configurado en el backend' });
   }
 
-  app.get('/api/parent/token', authenticateToken, async (req, res) => {
+  app.get('/api/parent/token', autenticarToken, async (req, res) => {
+    // Devuelve el token de vinculacion del adulto o crea uno si todavia no existe.
     if (!supabase) return requireSupabase(res);
 
     try {
-      const userId = req.user.id;
+      const idUsuario = req.user.id;
       const { data: user, error } = await supabase
         .from('users')
         .select('id, parent_token, role, is_adult')
-        .eq('id', userId)
+        .eq('id', idUsuario)
         .single();
 
       if (error || !user) return res.status(404).json({ error: 'Usuario no encontrado' });
-      if (!isParentCapableUser(user)) {
+      if (!puedeActuarComoPadre(user)) {
         return res.status(403).json({ error: 'Solo los adultos pueden tener token de vinculación' });
       }
 
       if (user.parent_token) {
-        return res.json({ parentToken: user.parent_token });
+        return res.json({ tokenPadre: user.parent_token });
       }
 
-      const newToken = generateParentToken();
-      const { error: updateError } = await supabase.from('users').update({ parent_token: newToken }).eq('id', userId);
-      if (updateError) throw updateError;
+      const newToken = generarTokenPadre();
+      const { error: errorActualizacion } = await supabase.from('users').update({ parent_token: newToken }).eq('id', idUsuario);
+      if (errorActualizacion) throw errorActualizacion;
 
-      return res.json({ parentToken: newToken });
+      return res.json({ tokenPadre: newToken });
     } catch (error) {
       console.error('Error al obtener token:', error);
       return res.status(500).json({ error: 'Error al obtener token' });
     }
   });
 
-  app.post('/api/child/link-parent', authenticateToken, linkingRateLimiter, async (req, res) => {
+  app.post('/api/child/link-parent', autenticarToken, linkingRateLimiter, async (req, res) => {
+    // Un hijo usa el token de un adulto para crear una solicitud de vinculacion.
     if (!supabase) return requireSupabase(res);
 
     try {
       const childId = req.user.id;
-      const { parentToken } = req.body || {};
-      const normalizedParentToken = String(parentToken || '').trim().toUpperCase();
+      const { tokenPadre } = req.body || {};
+      const normalizedParentToken = String(tokenPadre || '').trim().toUpperCase();
 
       if (!normalizedParentToken) return res.status(400).json({ error: 'Token de padre requerido' });
 
@@ -69,15 +73,15 @@ export function registerFamilyRoutes(app, deps) {
         .eq('parent_token', normalizedParentToken)
         .single();
 
-      const parent = normalizeRelatedUser(parentData);
+      const parent = normalizarUsuarioRelacionado(parentData);
 
       if (!child || child.role !== 'child' || child.is_adult) {
         return res.status(403).json({ error: 'Solo los hijos pueden vincular padres' });
       }
 
-      if (!parent || !isParentCapableUser(parent)) {
+      if (!parent || !puedeActuarComoPadre(parent)) {
         await logSecurityEvent(supabase, {
-          userId: childId,
+          idUsuario: childId,
           actionType: 'link_invalid_token',
           severity: 'medium',
           details: { token: normalizedParentToken },
@@ -89,7 +93,7 @@ export function registerFamilyRoutes(app, deps) {
       const validation = await validateLinkingLimits(supabase, { childId, parentId: parent.id });
       if (!validation.valid) {
         await logSecurityEvent(supabase, {
-          userId: childId,
+          idUsuario: childId,
           actionType: 'link_limit_exceeded',
           severity: validation.severity,
           details: { reason: validation.reason, parentId: parent.id },
@@ -112,17 +116,17 @@ export function registerFamilyRoutes(app, deps) {
       }
 
       await logSecurityEvent(supabase, {
-        userId: childId,
+        idUsuario: childId,
         actionType: 'link_request_created',
         severity: 'low',
         details: { parentId: parent.id, linkId: link.id },
         req,
       });
 
-      await notifyUserSafely(parent.id, {
+      await notificarUsuarioSinFallo(parent.id, {
         type: 'link_request_created',
         title: 'Nueva solicitud de vinculacion',
-        body: `${getUserDisplayName(child)} quiere vincularse contigo en la app.`,
+        body: `${obtenerNombreVisibleUsuario(child)} quiere vincularse contigo en la app.`,
         data: { linkId: link.id, childId, targetScreen: 'link-requests' },
       });
 
@@ -136,14 +140,15 @@ export function registerFamilyRoutes(app, deps) {
     }
   });
 
-  app.get('/api/parent/link-requests', authenticateToken, async (req, res) => {
+  app.get('/api/parent/link-requests', autenticarToken, async (req, res) => {
+    // Lista solicitudes pendientes que el padre puede aprobar o rechazar.
     if (!supabase) return requireSupabase(res);
 
     try {
       const parentId = req.user.id;
       const { data: parent } = await supabase.from('users').select('id, role, is_adult').eq('id', parentId).single();
 
-      if (!isParentCapableUser(parent)) {
+      if (!puedeActuarComoPadre(parent)) {
         return res.status(403).json({ error: 'Solo los adultos pueden ver solicitudes familiares' });
       }
 
@@ -164,20 +169,21 @@ export function registerFamilyRoutes(app, deps) {
         .order('requested_at', { ascending: false });
 
       if (error) throw error;
-      return res.json({ requests: (requests || []).map((request) => ({ ...request, child: normalizeRelatedUser(request.child) })) });
+      return res.json({ requests: (requests || []).map((request) => ({ ...request, child: normalizarUsuarioRelacionado(request.child) })) });
     } catch (error) {
       console.error('Error al obtener solicitudes:', error);
       return res.status(500).json({ error: 'Error al obtener solicitudes' });
     }
   });
 
-  app.put('/api/parent/link-requests/:id/approve', authenticateToken, async (req, res) => {
+  app.put('/api/parent/link-requests/:id/approve', autenticarToken, async (req, res) => {
+    // Convierte una solicitud pendiente en un vinculo activo.
     if (!supabase) return requireSupabase(res);
 
     try {
       const parentId = req.user.id;
       const linkId = req.params.id;
-      const { spendingLimit = 20.0 } = req.body || {};
+      const { limiteGasto = 20.0 } = req.body || {};
 
       const { data: link, error: linkError } = await supabase
         .from('parent_child_links')
@@ -192,7 +198,7 @@ export function registerFamilyRoutes(app, deps) {
 
       const { data: updated, error } = await supabase
         .from('parent_child_links')
-        .update({ status: 'active', approved_at: new Date().toISOString(), spending_limit: spendingLimit })
+        .update({ status: 'active', approved_at: new Date().toISOString(), spending_limit: limiteGasto })
         .eq('id', linkId)
         .select()
         .single();
@@ -202,14 +208,14 @@ export function registerFamilyRoutes(app, deps) {
       await supabase.from('users').update({ role: 'parent' }).eq('id', parentId).eq('is_adult', true).eq('role', 'customer');
 
       await logSecurityEvent(supabase, {
-        userId: parentId,
+        idUsuario: parentId,
         actionType: 'link_approved',
         severity: 'low',
-        details: { linkId, childId: link.child_id, spendingLimit },
+        details: { linkId, childId: link.child_id, limiteGasto },
         req,
       });
 
-      await notifyUserSafely(link.child_id, {
+      await notificarUsuarioSinFallo(link.child_id, {
         type: 'link_request_approved',
         title: 'Vinculacion aprobada',
         body: 'Tu solicitud de vinculacion familiar ha sido aprobada.',
@@ -223,7 +229,8 @@ export function registerFamilyRoutes(app, deps) {
     }
   });
 
-  app.put('/api/parent/link-requests/:id/reject', authenticateToken, async (req, res) => {
+  app.put('/api/parent/link-requests/:id/reject', autenticarToken, async (req, res) => {
+    // Rechaza una solicitud y deja constancia del motivo.
     if (!supabase) return requireSupabase(res);
 
     try {
@@ -249,14 +256,14 @@ export function registerFamilyRoutes(app, deps) {
       if (error) throw error;
 
       await logSecurityEvent(supabase, {
-        userId: parentId,
+        idUsuario: parentId,
         actionType: 'link_rejected',
         severity: 'low',
         details: { linkId, childId: link.child_id, reason },
         req,
       });
 
-      await notifyUserSafely(link.child_id, {
+      await notificarUsuarioSinFallo(link.child_id, {
         type: 'link_request_rejected',
         title: 'Vinculacion rechazada',
         body: reason || 'Tu solicitud de vinculacion ha sido rechazada.',
@@ -270,7 +277,8 @@ export function registerFamilyRoutes(app, deps) {
     }
   });
 
-  app.get('/api/child/my-parents', authenticateToken, async (req, res) => {
+  app.get('/api/child/my-parents', autenticarToken, async (req, res) => {
+    // Permite al hijo consultar con que padres esta relacionado.
     if (!supabase) return requireSupabase(res);
 
     try {
@@ -291,21 +299,22 @@ export function registerFamilyRoutes(app, deps) {
         .in('status', ['active', 'pending']);
 
       if (error) throw error;
-      return res.json({ parents: (links || []).map((link) => ({ ...link, parent: normalizeRelatedUser(link.parent) })) });
+      return res.json({ parents: (links || []).map((link) => ({ ...link, parent: normalizarUsuarioRelacionado(link.parent) })) });
     } catch (error) {
       console.error('Error al obtener padres:', error);
       return res.status(500).json({ error: 'Error al obtener padres' });
     }
   });
 
-  app.get('/api/parent/my-children', authenticateToken, async (req, res) => {
+  app.get('/api/parent/my-children', autenticarToken, async (req, res) => {
+    // Permite al adulto ver sus hijos vinculados activos.
     if (!supabase) return requireSupabase(res);
 
     try {
       const parentId = req.user.id;
       const { data: parent } = await supabase.from('users').select('id, role, is_adult').eq('id', parentId).single();
 
-      if (!isParentCapableUser(parent)) {
+      if (!puedeActuarComoPadre(parent)) {
         return res.status(403).json({ error: 'Solo los adultos pueden ver sus hijos vinculados' });
       }
 
@@ -326,7 +335,7 @@ export function registerFamilyRoutes(app, deps) {
         .eq('status', 'active');
 
       if (error) throw error;
-      return res.json({ children: (links || []).map((link) => ({ ...link, child: normalizeRelatedUser(link.child) })) });
+      return res.json({ children: (links || []).map((link) => ({ ...link, child: normalizarUsuarioRelacionado(link.child) })) });
     } catch (error) {
       console.error('Error al obtener hijos:', error);
       return res.status(500).json({ error: 'Error al obtener hijos' });

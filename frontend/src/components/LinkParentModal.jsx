@@ -1,21 +1,22 @@
+// Modal para que un menor vincule un padre mediante token o para mostrar ayuda del flujo.
 import React, { useState } from 'react';
 import './LinkParentModal.css';
-import { requestParentLink } from '../lib/api';
+import { solicitarVinculoPadre } from '../lib/api';
 
 export default function LinkParentModal({ isOpen, onClose }) {
-  const [parentToken, setParentToken] = useState('');
+  const [tokenPadre, setParentToken] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
-  const handleSubmit = async (e) => {
+  const gestionarEnvio = async (e) => {
     e.preventDefault();
     setError('');
     setSuccess('');
     setLoading(true);
 
     try {
-      const data = await requestParentLink(parentToken.toUpperCase());
+      const data = await solicitarVinculoPadre(tokenPadre.toUpperCase());
 
       setSuccess(`Solicitud enviada a ${data.link.parentName}. Espera su aprobación.`);
       setParentToken('');
@@ -46,10 +47,10 @@ export default function LinkParentModal({ isOpen, onClose }) {
             Pide a tu padre su <strong>token de vinculación</strong> (8 caracteres) y escríbelo aquí:
           </p>
           
-          <form onSubmit={handleSubmit}>
+          <form onSubmit={gestionarEnvio}>
             <input
               type="text"
-              value={parentToken}
+              value={tokenPadre}
               onChange={e => setParentToken(e.target.value.toUpperCase())}
               placeholder="Ej: ABC12XYZ"
               maxLength={8}
@@ -69,17 +70,17 @@ export default function LinkParentModal({ isOpen, onClose }) {
             
             <button 
               type="submit" 
-              disabled={loading || parentToken.length !== 8}
+              disabled={loading || tokenPadre.length !== 8}
               style={{
                 width: '100%',
                 padding: 12,
-                background: parentToken.length === 8 ? '#d4915f' : '#ccc',
+                background: tokenPadre.length === 8 ? '#d4915f' : '#ccc',
                 color: '#fff',
                 border: 'none',
                 borderRadius: 8,
                 fontSize: 16,
                 fontWeight: 600,
-                cursor: parentToken.length === 8 ? 'pointer' : 'not-allowed'
+                cursor: tokenPadre.length === 8 ? 'pointer' : 'not-allowed'
               }}
             >
               {loading ? 'Enviando...' : 'Enviar Solicitud'}
@@ -106,3 +107,5 @@ export default function LinkParentModal({ isOpen, onClose }) {
     </div>
   );
 }
+// Modal para que un menor vincule un padre mediante token o para mostrar ayuda del flujo.
+// Modal para que un menor vincule un padre mediante token o para mostrar ayuda del flujo.

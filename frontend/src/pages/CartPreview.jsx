@@ -1,3 +1,4 @@
+// Vista preliminar del carrito usada como pagina de apoyo o demo.
 import React, { useState } from 'react';
 import CartPanel from '../components/CartPanel';
 
@@ -200,7 +201,7 @@ const CartPreview = () => {
   };
 
   // Manejar cambios de cantidad
-  const handleUpdateQuantity = (itemId, newQuantity) => {
+  const gestionarActualizarCantidad = (itemId, newQuantity) => {
     if (newQuantity === 0) {
       const item = cartItems.find(item => item.id === itemId);
       setCartItems(prev => prev.filter(item => item.id !== itemId));
@@ -218,7 +219,7 @@ const CartPreview = () => {
   };
 
   // Aplicar cupón de descuento
-  const handleApplyCoupon = (couponCode) => {
+  const gestionarAplicarCupon = (couponCode) => {
     const validCoupons = {
       'DESCUENTO10': { type: 'percentage', value: 0.10, name: '10% de descuento' },
       'WELCOME5': { type: 'fixed', value: 5.00, name: '5€ de descuento' },
@@ -245,7 +246,7 @@ const CartPreview = () => {
   };
 
   // Procesar checkout
-  const handleCheckout = async () => {
+  const gestionarPago = async () => {
     setIsProcessingOrder(true);
     addMessage('Iniciando procesamiento del pedido...', 'info');
     
@@ -260,7 +261,7 @@ const CartPreview = () => {
   };
 
   // Función para resetear el carrito
-  const resetCart = () => {
+  const reiniciarCarrito = () => {
     setCartItems(SAMPLE_CART_ITEMS);
     setDiscount(0);
     addMessage('Carrito restablecido', 'info');
@@ -281,7 +282,7 @@ const CartPreview = () => {
       </header>
 
       <div className="preview-controls">
-        <button className="control-btn reset" onClick={resetCart}>
+        <button className="control-btn reset" onClick={reiniciarCarrito}>
           🔄 Restablecer carrito
         </button>
         <button className="control-btn clear" onClick={clearCart}>
@@ -293,12 +294,12 @@ const CartPreview = () => {
         <div className="cart-demo">
           <CartPanel
             cartItems={cartItems}
-            onUpdateQuantity={handleUpdateQuantity}
-            onApplyCoupon={handleApplyCoupon}
+            onUpdateQuantity={gestionarActualizarCantidad}
+            onApplyCoupon={gestionarAplicarCupon}
             subtotal={subtotal}
             discount={discount}
             deliveryFee={2.50}
-            onCheckout={handleCheckout}
+            onCheckout={gestionarPago}
             isLoading={isProcessingOrder}
             loadingMessage="🐹 El hámster está preparando tu pedido..."
           />

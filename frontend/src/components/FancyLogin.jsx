@@ -1,7 +1,8 @@
+// Pantalla de acceso principal con login, registro y recuperacion de contraseña.
 import React, { useState } from "react";
 import "./FancyLogin.css";
 import { showInfo, showSuccess } from "./Toast";
-import { loginUser, registerUser, resetPassword } from "../lib/api";
+import { iniciarSesion, registrarUsuario, restablecerContrasena } from "../lib/api";
 
 export default function FancyLogin({ onLogin }) {
   const [isSignup, setIsSignup] = useState(false);
@@ -15,14 +16,14 @@ export default function FancyLogin({ onLogin }) {
   const [signupBirthDate, setSignupBirthDate] = useState("");
   const [resetEmail, setResetEmail] = useState("");
   const [resetBirthDate, setResetBirthDate] = useState("");
-  const [resetPasswordValue, setResetPasswordValue] = useState("");
-  const [resetPasswordConfirm, setResetPasswordConfirm] = useState("");
+  const [restablecerContrasenaValue, setResetPasswordValue] = useState("");
+  const [restablecerContrasenaConfirm, setResetPasswordConfirm] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
   const normalizeSpaces = (value = "") => value.trim().replace(/\s+/g, " ");
 
-  const formatFullName = (value = "") => {
+  const formatearNombreCompleto = (value = "") => {
     const cleaned = normalizeSpaces(value);
     if (!cleaned) return "";
 
@@ -80,7 +81,7 @@ export default function FancyLogin({ onLogin }) {
     setLoading(true);
 
     try {
-      const data = await loginUser({ email: loginEmail, password: loginPassword });
+      const data = await iniciarSesion({ email: loginEmail, password: loginPassword });
 
       localStorage.setItem('cafeteria_token', data.token);
 
@@ -89,8 +90,8 @@ export default function FancyLogin({ onLogin }) {
         email: data.user.email,
         name: data.user.name,
         alias: data.user.alias || null,
-        userId: data.user.id,
-        parentToken: data.user.parentToken,
+        idUsuario: data.user.id,
+        tokenPadre: data.user.tokenPadre,
         isAdult: data.user.isAdult,
         specialCode: data.user.specialCode || null,
         created_at: data.user.created_at || null
@@ -108,7 +109,7 @@ export default function FancyLogin({ onLogin }) {
     setError("");
     setLoading(true);
 
-    const formattedName = formatFullName(signupName);
+    const formattedName = formatearNombreCompleto(signupName);
     const wordCount = formattedName.split(" ").filter(Boolean).length;
 
     if (!formattedName || !signupEmail || !signupPassword || !signupPasswordConfirm || !signupBirthDate) {
@@ -142,7 +143,7 @@ export default function FancyLogin({ onLogin }) {
     }
 
     try {
-      const data = await registerUser({
+      const data = await registrarUsuario({
         name: formattedName,
         email: signupEmail,
         password: signupPassword,
@@ -151,10 +152,10 @@ export default function FancyLogin({ onLogin }) {
 
       localStorage.setItem('cafeteria_token', data.token);
 
-      if (data.user.parentToken) {
+      if (data.user.tokenPadre) {
         showSuccess('¡Cuenta creada exitosamente!');
-        if (data.user.parentToken) {
-          showInfo(`Token de Vinculación: ${data.user.parentToken}`);
+        if (data.user.tokenPadre) {
+          showInfo(`Token de Vinculación: ${data.user.tokenPadre}`);
           showInfo('Comparte este token en Perfil → Vincular Familiar');
         }
       }
@@ -164,8 +165,8 @@ export default function FancyLogin({ onLogin }) {
         email: data.user.email,
         name: data.user.name,
         alias: data.user.alias || null,
-        userId: data.user.id,
-        parentToken: data.user.parentToken,
+        idUsuario: data.user.id,
+        tokenPadre: data.user.tokenPadre,
         isAdult: data.user.isAdult,
         specialCode: data.user.specialCode || null,
         created_at: data.user.created_at || null
@@ -183,29 +184,29 @@ export default function FancyLogin({ onLogin }) {
     setError("");
     setLoading(true);
 
-    if (!resetEmail || !resetBirthDate || !resetPasswordValue || !resetPasswordConfirm) {
+    if (!resetEmail || !resetBirthDate || !restablecerContrasenaValue || !restablecerContrasenaConfirm) {
       setError('Todos los campos son obligatorios');
       setLoading(false);
       return;
     }
 
-    if (resetPasswordValue.length < 6) {
+    if (restablecerContrasenaValue.length < 6) {
       setError('La contraseña debe tener al menos 6 caracteres');
       setLoading(false);
       return;
     }
 
-    if (resetPasswordValue !== resetPasswordConfirm) {
+    if (restablecerContrasenaValue !== restablecerContrasenaConfirm) {
       setError('Las contraseñas no coinciden');
       setLoading(false);
       return;
     }
 
     try {
-      await resetPassword({
+      await restablecerContrasena({
         email: resetEmail,
         birthDate: resetBirthDate,
-        newPassword: resetPasswordValue,
+        newPassword: restablecerContrasenaValue,
       });
 
       setLoginEmail(resetEmail);
@@ -351,7 +352,7 @@ export default function FancyLogin({ onLogin }) {
                       type="text"
                       value={signupName}
                       onChange={e => setSignupName(e.target.value)}
-                      onBlur={e => setSignupName(formatFullName(e.target.value))}
+                      onBlur={e => setSignupName(formatearNombreCompleto(e.target.value))}
                       required
                     />
                     <input
@@ -429,7 +430,7 @@ export default function FancyLogin({ onLogin }) {
                     className="flip-card__input"
                     placeholder="Nueva contraseña"
                     type="password"
-                    value={resetPasswordValue}
+                    value={restablecerContrasenaValue}
                     onChange={e => setResetPasswordValue(e.target.value)}
                     required
                   />
@@ -437,7 +438,7 @@ export default function FancyLogin({ onLogin }) {
                     className="flip-card__input"
                     placeholder="Repite la nueva contraseña"
                     type="password"
-                    value={resetPasswordConfirm}
+                    value={restablecerContrasenaConfirm}
                     onChange={e => setResetPasswordConfirm(e.target.value)}
                     required
                   />
@@ -466,3 +467,5 @@ export default function FancyLogin({ onLogin }) {
     </div>
   );
 }
+// Pantalla de acceso principal con login, registro y recuperacion de contraseña.
+// Pantalla de acceso principal con login, registro y recuperacion de contraseña.

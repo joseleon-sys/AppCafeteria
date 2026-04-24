@@ -1,3 +1,4 @@
+// Barra superior con buscador y acceso a filtros.
 import React from "react";
 
 export default function TopBar() {

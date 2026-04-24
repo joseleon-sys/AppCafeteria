@@ -1,3 +1,4 @@
+// Barra de navegacion inferior de la app para acceder a historial, carrito y favoritos.
 import React from "react";
 import { useCart } from "../lib/CartContext";
 import './BottomNav.css';
@@ -8,7 +9,8 @@ export default function BottomNav({ activeTab = 'home', onTabChange, onShowSpinn
   
   const cartCount = cartItems.reduce((total, item) => total + item.quantity, 0);
 
-  const handleNavClick = (tabId, action) => {
+  const gestionarClickNavegacion = (tabId, action) => {
+    // Cada pestaña puede cambiar de vista, abrir un modal o lanzar una animacion previa.
     if (action === 'cart') {
       onTabChange && onTabChange(tabId);
       onShowCart && onShowCart();
@@ -30,7 +32,7 @@ export default function BottomNav({ activeTab = 'home', onTabChange, onShowSpinn
     <nav className="bottom-nav" aria-label="Navegación principal">
       <button 
         className={`nav-btn ${activeTab === 'orders' ? 'active' : ''}`} 
-        onClick={() => handleNavClick('orders', 'history')}
+        onClick={() => gestionarClickNavegacion('orders', 'history')}
         aria-label="Ver historial"
       >
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
@@ -42,7 +44,7 @@ export default function BottomNav({ activeTab = 'home', onTabChange, onShowSpinn
       
       <button 
         className="nav-btn-central" 
-        onClick={() => handleNavClick('cart', 'cart')}
+        onClick={() => gestionarClickNavegacion('cart', 'cart')}
         aria-label="Ver carrito"
       >
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
@@ -57,7 +59,7 @@ export default function BottomNav({ activeTab = 'home', onTabChange, onShowSpinn
       
       <button 
         className={`nav-btn ${activeTab === 'favorites' ? 'active' : ''}`} 
-        onClick={() => handleNavClick('favorites', 'loading')}
+        onClick={() => gestionarClickNavegacion('favorites', 'loading')}
         aria-label="Favoritos"
       >
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">

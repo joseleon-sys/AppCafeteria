@@ -1,3 +1,4 @@
+// Pantalla a la que vuelve el usuario despues de un pago completado.
 import React from 'react';
 import './CartPage.css';
 
@@ -5,9 +6,9 @@ export default function PagoExitoso() {
   const searchParams = new URLSearchParams(window.location.search);
   const sessionId = searchParams.get('session_id');
   const devBypass = searchParams.get('dev_bypass') === '1';
-  const orderId = searchParams.get('order_id');
-  const viewOrderHref = orderId
-    ? `/?history=1&order_id=${encodeURIComponent(orderId)}`
+  const idPedido = searchParams.get('order_id');
+  const viewOrderHref = idPedido
+    ? `/?history=1&order_id=${encodeURIComponent(idPedido)}`
     : '/?history=1';
 
   return (

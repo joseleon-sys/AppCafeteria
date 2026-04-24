@@ -1,3 +1,4 @@
+// Hook principal del carrito: estado, persistencia, cupones y totales.
 import { useState, useEffect, useCallback } from 'react';
 
 /**
@@ -5,6 +6,7 @@ import { useState, useEffect, useCallback } from 'react';
  * Incluye persistencia en localStorage y funciones auxiliares
  */
 function normalizeStoredCartItem(item) {
+  // Limpia y valida los items recuperados desde localStorage.
   if (!item || typeof item !== 'object') return null;
 
   const id = String(item.id ?? '').trim();

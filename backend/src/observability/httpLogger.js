@@ -1,3 +1,4 @@
+// Logger HTTP del backend: asigna id de peticion, oculta datos sensibles y puede reenviar logs.
 import pinoHttp from 'pino-http';
 import { randomUUID } from 'crypto';
 import net from 'net';
@@ -13,6 +14,7 @@ const redactPaths = [
 ];
 
 export function createHttpLogger() {
+  // Configura como se escriben y enriquecen los logs de cada peticion HTTP.
   return pinoHttp({
     level: process.env.LOG_LEVEL || 'info',
     redact: {
@@ -23,7 +25,7 @@ export function createHttpLogger() {
     customProps: (req) => ({
       service: 'cafeteria-backend',
       environment: process.env.SENTRY_ENVIRONMENT || process.env.NODE_ENV || 'development',
-      userId: req.user?.id ? String(req.user.id) : undefined,
+      idUsuario: req.user?.id ? String(req.user.id) : undefined,
       userRole: req.user?.role,
     }),
     customLogLevel: (_req, res, error) => {
@@ -38,6 +40,7 @@ export function createHttpLogger() {
 }
 
 function parseLogstashUrl(value) {
+  // Convierte la URL o host:puerto de Logstash a un objeto facil de usar.
   const rawValue = String(value || '').trim();
   if (!rawValue) return null;
 
@@ -54,6 +57,7 @@ function parseLogstashUrl(value) {
 }
 
 function createLogstashWriter() {
+  // Si hay destino configurado, crea una conexion TCP para enviar una copia de los logs.
   const target = parseLogstashUrl(process.env.LOGSTASH_TCP_URL);
   if (!target) return null;
 
@@ -85,6 +89,7 @@ function createLogstashWriter() {
 }
 
 function createLogStream() {
+  // Siempre escribe en consola y, si existe, tambien manda la linea a Logstash.
   const writeToLogstash = createLogstashWriter();
 
   return {

@@ -1,3 +1,4 @@
+// Componente visual decorativo usado en algunas pantallas de la interfaz.
 import React, { useEffect, useRef } from "react";
 import "./Pixie.css";
 
@@ -27,3 +28,5 @@ export default function Pixie({ message = "¿How can I help you?" }) {
     </div>
   );
 }
+// Componente visual decorativo usado en algunas pantallas de la interfaz.
+// Componente visual decorativo usado en algunas pantallas de la interfaz.

@@ -1,7 +1,8 @@
+// Modal que muestra el historial de pedidos del usuario actual.
 import React, { useEffect, useState } from "react";
 import "./HistoryModal.css";
 import { showError } from "./Toast";
-import { fetchOrderDetailForUser, fetchOrderHistoryForUser } from "../lib/orderService";
+import { obtenerDetallePedidoParaUsuario, obtenerHistorialPedidosParaUsuario } from "../lib/orderService";
 
 export default function HistoryModal({ isOpen, onClose, user, initialOrderId = null }) {
   const [orders, setOrders] = useState([]);
@@ -24,14 +25,14 @@ export default function HistoryModal({ isOpen, onClose, user, initialOrderId = n
     const loadHistory = async () => {
       setLoading(true);
       try {
-        const data = await fetchOrderHistoryForUser(user);
+        const data = await obtenerHistorialPedidosParaUsuario(user);
         if (!cancelled) {
           setOrders(data);
           if (initialOrderId) {
             const initialOrder = data.find((order) => String(order.id) === String(initialOrderId));
             if (initialOrder) {
               try {
-                const detail = await fetchOrderDetailForUser(user, initialOrder);
+                const detail = await obtenerDetallePedidoParaUsuario(user, initialOrder);
                 if (!cancelled) {
                   setSelectedOrder(detail);
                 }
@@ -113,7 +114,7 @@ export default function HistoryModal({ isOpen, onClose, user, initialOrderId = n
 
   const handleOpenOrder = async (order) => {
     try {
-      const detail = await fetchOrderDetailForUser(user, order);
+      const detail = await obtenerDetallePedidoParaUsuario(user, order);
       setSelectedOrder(detail);
     } catch (error) {
       console.error('Error cargando detalle:', error);
@@ -275,3 +276,5 @@ export default function HistoryModal({ isOpen, onClose, user, initialOrderId = n
     </>
   );
 }
+// Modal que muestra el historial de pedidos del usuario actual.
+// Modal que muestra el historial de pedidos del usuario actual.

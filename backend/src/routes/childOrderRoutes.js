@@ -1,15 +1,16 @@
+// Flujo de pedidos creado por hijos y aprobado posteriormente por un padre.
 export function registerChildOrderRoutes(app, deps) {
   const {
     supabase,
-    authenticateToken,
-    isParentCapableUser,
-    notifyUserSafely,
-    validateOrderItems,
-    parsePositiveInteger,
-    buildOrderStatusAliases,
-    normalizeHistoricOrderEntry,
-    normalizeRelatedUser,
-    resolveProfileIdForUser,
+    autenticarToken,
+    puedeActuarComoPadre,
+    notificarUsuarioSinFallo,
+    validarItemsPedido,
+    parsearEnteroPositivo,
+    construirAliasEstadoPedido,
+    normalizarEntradaHistoricaPedido,
+    normalizarUsuarioRelacionado,
+    resolverIdPerfilParaUsuario,
   } = deps;
 
   function requireSupabase(res) {
@@ -17,6 +18,7 @@ export function registerChildOrderRoutes(app, deps) {
   }
 
   function mapPedidoItems(lineasPedido = []) {
+    // Adapta las filas de base de datos a un formato mas amigable para el frontend.
     return Array.isArray(lineasPedido)
       ? lineasPedido.map((item) => {
           const price = Number.parseFloat(item.precio_compra ?? 0) || 0;
@@ -34,8 +36,9 @@ export function registerChildOrderRoutes(app, deps) {
   }
 
   function mapPedidoOrder(order, child = null) {
+    // Normaliza una orden infantil para reutilizar la misma vista de historial.
     const items = mapPedidoItems(order?.lineas_pedido);
-    return normalizeHistoricOrderEntry({
+    return normalizarEntradaHistoricaPedido({
       id: order.id,
       status: order.estado,
       created_at: order.fecha_creacion,
@@ -46,7 +49,8 @@ export function registerChildOrderRoutes(app, deps) {
     });
   }
 
-  app.post('/api/child/orders', authenticateToken, async (req, res) => {
+  app.post('/api/child/orders', autenticarToken, async (req, res) => {
+    // Crea un pedido pendiente que debera aprobar uno de los padres vinculados.
     if (!supabase) return requireSupabase(res);
 
     const { items, notes, parent_id } = req.body || {};
@@ -66,8 +70,8 @@ export function registerChildOrderRoutes(app, deps) {
       const link = parent_id ? links.find((entry) => entry.parent_id === parent_id) : links[0];
       if (!link) return res.status(400).json({ error: 'Padre especificado no encontrado' });
 
-      const validatedOrder = await validateOrderItems(items, { userId: req.user.id });
-      const validatedItems = validatedOrder.items.map((item) => ({
+      const validatedOrder = await validarItemsPedido(items, { idUsuario: req.user.id });
+      const itemsValidados = validatedOrder.items.map((item) => ({
         product_id: item.product_id,
         product_name: item.product_name,
         quantity: item.quantity,
@@ -76,11 +80,11 @@ export function registerChildOrderRoutes(app, deps) {
       }));
 
       const { subtotal, tax, total } = validatedOrder;
-      const spendingLimit = Number(link.spending_limit || 0);
+      const limiteGasto = Number(link.spending_limit || 0);
 
-      if (spendingLimit > 0 && total > spendingLimit) {
+      if (limiteGasto > 0 && total > limiteGasto) {
         return res.status(403).json({
-          error: `El total (${total.toFixed(2)} EUR) excede el limite de gasto (${spendingLimit.toFixed(2)} EUR)`,
+          error: `El total (${total.toFixed(2)} EUR) excede el limite de gasto (${limiteGasto.toFixed(2)} EUR)`,
         });
       }
 
@@ -105,19 +109,19 @@ export function registerChildOrderRoutes(app, deps) {
 
       const { error: itemsError } = await supabase
         .from('child_order_items')
-        .insert(validatedItems.map((item) => ({ order_id: order.id, ...item })));
+        .insert(itemsValidados.map((item) => ({ order_id: order.id, ...item })));
 
       if (itemsError) throw itemsError;
 
-      await notifyUserSafely(link.parent_id, {
+      await notificarUsuarioSinFallo(link.parent_id, {
         type: 'child_order_pending',
         title: 'Nuevo pedido pendiente',
         body: 'Uno de tus hijos ha creado un pedido y necesita tu aprobacion.',
-        data: { orderId: order.id, childId: req.user.id, targetScreen: 'parent-orders' },
+        data: { idPedido: order.id, childId: req.user.id, targetScreen: 'parent-orders' },
       });
 
       return res.status(201).json({
-        order: { id: order.id, status: order.status, total: order.total, items: validatedItems, created_at: order.created_at },
+        order: { id: order.id, status: order.status, total: order.total, items: itemsValidados, created_at: order.created_at },
       });
     } catch (error) {
       console.error('Error creating child order:', error);
@@ -125,15 +129,16 @@ export function registerChildOrderRoutes(app, deps) {
     }
   });
 
-  app.get('/api/child/orders', authenticateToken, async (req, res) => {
+  app.get('/api/child/orders', autenticarToken, async (req, res) => {
+    // Devuelve el historial de pedidos del hijo autenticado.
     if (!supabase) return requireSupabase(res);
     if (req.user.role !== 'child') return res.status(403).json({ error: 'Solo los hijos pueden ver sus pedidos' });
 
     const { status } = req.query;
-    const normalizedStatuses = buildOrderStatusAliases(status);
+    const normalizedStatuses = construirAliasEstadoPedido(status);
 
     try {
-      const profileId = await resolveProfileIdForUser(req.user);
+      const profileId = await resolverIdPerfilParaUsuario(req.user);
       if (!profileId) {
         return res.status(400).json({ error: 'No se pudo resolver el perfil del usuario para consultar pedidos' });
       }
@@ -169,14 +174,14 @@ export function registerChildOrderRoutes(app, deps) {
     }
   });
 
-  app.get('/api/child/orders/:id', authenticateToken, async (req, res) => {
+  app.get('/api/child/orders/:id', autenticarToken, async (req, res) => {
     if (!supabase) return requireSupabase(res);
     if (req.user.role !== 'child') return res.status(403).json({ error: 'Solo los hijos pueden ver detalles de pedidos' });
 
     const id = String(req.params.id || '').trim();
 
     try {
-      const profileId = await resolveProfileIdForUser(req.user);
+      const profileId = await resolverIdPerfilParaUsuario(req.user);
       if (!profileId) {
         return res.status(400).json({ error: 'No se pudo resolver el perfil del usuario para consultar el pedido' });
       }
@@ -209,16 +214,16 @@ export function registerChildOrderRoutes(app, deps) {
     }
   });
 
-  app.get('/api/parent/child-orders', authenticateToken, async (req, res) => {
+  app.get('/api/parent/child-orders', autenticarToken, async (req, res) => {
     if (!supabase) return requireSupabase(res);
-    if (!isParentCapableUser(req.user)) return res.status(403).json({ error: 'Solo los padres pueden ver pedidos de hijos' });
+    if (!puedeActuarComoPadre(req.user)) return res.status(403).json({ error: 'Solo los padres pueden ver pedidos de hijos' });
 
     const { status, child_id } = req.query;
-    const limit = parsePositiveInteger(req.query.limit, 20);
-    const offset = parsePositiveInteger(req.query.offset, 0);
+    const limit = parsearEnteroPositivo(req.query.limit, 20);
+    const offset = parsearEnteroPositivo(req.query.offset, 0);
 
     try {
-      const profileId = await resolveProfileIdForUser(req.user);
+      const profileId = await resolverIdPerfilParaUsuario(req.user);
       if (!profileId) {
         return res.status(400).json({ error: 'No se pudo resolver el perfil del usuario para consultar el historial' });
       }
@@ -244,7 +249,7 @@ export function registerChildOrderRoutes(app, deps) {
 
         return {
           ...order,
-          child: normalizeRelatedUser(order.child),
+          child: normalizarUsuarioRelacionado(order.child),
           items_count: count || 0,
         };
       }));
@@ -256,9 +261,9 @@ export function registerChildOrderRoutes(app, deps) {
     }
   });
 
-  app.get('/api/parent/orders/:id', authenticateToken, async (req, res) => {
+  app.get('/api/parent/orders/:id', autenticarToken, async (req, res) => {
     if (!supabase) return requireSupabase(res);
-    if (!isParentCapableUser(req.user)) return res.status(403).json({ error: 'Solo los padres pueden ver detalles de pedidos' });
+    if (!puedeActuarComoPadre(req.user)) return res.status(403).json({ error: 'Solo los padres pueden ver detalles de pedidos' });
 
     const { id } = req.params;
 
@@ -282,7 +287,7 @@ export function registerChildOrderRoutes(app, deps) {
       return res.json({
         order: {
           ...order,
-          child: normalizeRelatedUser(order.child),
+          child: normalizarUsuarioRelacionado(order.child),
           items: items || [],
           spending_limit: order.link?.spending_limit || 0,
         },
@@ -293,9 +298,9 @@ export function registerChildOrderRoutes(app, deps) {
     }
   });
 
-  app.put('/api/parent/orders/:id/approve', authenticateToken, async (req, res) => {
+  app.put('/api/parent/orders/:id/approve', autenticarToken, async (req, res) => {
     if (!supabase) return requireSupabase(res);
-    if (!isParentCapableUser(req.user)) return res.status(403).json({ error: 'Solo los padres pueden aprobar pedidos' });
+    if (!puedeActuarComoPadre(req.user)) return res.status(403).json({ error: 'Solo los padres pueden aprobar pedidos' });
 
     const { id } = req.params;
     const { approved_amount } = req.body || {};
@@ -312,20 +317,20 @@ export function registerChildOrderRoutes(app, deps) {
       if (fetchError || !order) return res.status(404).json({ error: 'Pedido no encontrado o ya procesado' });
 
       const finalAmount = approved_amount || order.total;
-      const { data: updated, error: updateError } = await supabase
+      const { data: updated, error: errorActualizacion } = await supabase
         .from('child_orders')
         .update({ status: 'approved', approved_amount: finalAmount, approved_at: new Date().toISOString() })
         .eq('id', id)
         .select()
         .single();
 
-      if (updateError) throw updateError;
+      if (errorActualizacion) throw errorActualizacion;
 
-      await notifyUserSafely(order.child_id, {
+      await notificarUsuarioSinFallo(order.child_id, {
         type: 'child_order_approved',
         title: 'Pedido aprobado',
         body: 'Tu pedido ha sido aprobado y ya puede prepararse.',
-        data: { orderId: id, targetScreen: 'child-orders' },
+        data: { idPedido: id, targetScreen: 'child-orders' },
       });
 
       return res.json({ order: updated, message: 'Pedido aprobado exitosamente' });
@@ -335,9 +340,9 @@ export function registerChildOrderRoutes(app, deps) {
     }
   });
 
-  app.put('/api/parent/orders/:id/reject', authenticateToken, async (req, res) => {
+  app.put('/api/parent/orders/:id/reject', autenticarToken, async (req, res) => {
     if (!supabase) return requireSupabase(res);
-    if (!isParentCapableUser(req.user)) return res.status(403).json({ error: 'Solo los padres pueden rechazar pedidos' });
+    if (!puedeActuarComoPadre(req.user)) return res.status(403).json({ error: 'Solo los padres pueden rechazar pedidos' });
 
     const { id } = req.params;
     const { reason } = req.body || {};
@@ -357,20 +362,20 @@ export function registerChildOrderRoutes(app, deps) {
 
       if (fetchError || !order) return res.status(404).json({ error: 'Pedido no encontrado o ya procesado' });
 
-      const { data: updated, error: updateError } = await supabase
+      const { data: updated, error: errorActualizacion } = await supabase
         .from('child_orders')
         .update({ status: 'rejected', rejection_reason: reason, rejected_at: new Date().toISOString() })
         .eq('id', id)
         .select()
         .single();
 
-      if (updateError) throw updateError;
+      if (errorActualizacion) throw errorActualizacion;
 
-      await notifyUserSafely(order.child_id, {
+      await notificarUsuarioSinFallo(order.child_id, {
         type: 'child_order_rejected',
         title: 'Pedido rechazado',
         body: reason || 'Tu pedido ha sido rechazado por tu responsable.',
-        data: { orderId: id, targetScreen: 'child-orders' },
+        data: { idPedido: id, targetScreen: 'child-orders' },
       });
 
       return res.json({ order: updated, message: 'Pedido rechazado' });
@@ -380,9 +385,9 @@ export function registerChildOrderRoutes(app, deps) {
     }
   });
 
-  app.put('/api/parent/orders/:id/pay', authenticateToken, async (req, res) => {
+  app.put('/api/parent/orders/:id/pay', autenticarToken, async (req, res) => {
     if (!supabase) return requireSupabase(res);
-    if (!isParentCapableUser(req.user)) return res.status(403).json({ error: 'Solo los padres pueden marcar pedidos como pagados' });
+    if (!puedeActuarComoPadre(req.user)) return res.status(403).json({ error: 'Solo los padres pueden marcar pedidos como pagados' });
 
     const { id } = req.params;
     const { payment_method = 'cash', amount_paid } = req.body || {};
@@ -399,20 +404,20 @@ export function registerChildOrderRoutes(app, deps) {
       if (fetchError || !order) return res.status(404).json({ error: 'Pedido no encontrado o no está aprobado' });
 
       const finalAmount = amount_paid || order.approved_amount || order.total;
-      const { data: updated, error: updateError } = await supabase
+      const { data: updated, error: errorActualizacion } = await supabase
         .from('child_orders')
         .update({ status: 'paid', payment_method, amount_paid: finalAmount, paid_at: new Date().toISOString() })
         .eq('id', id)
         .select()
         .single();
 
-      if (updateError) throw updateError;
+      if (errorActualizacion) throw errorActualizacion;
 
-      await notifyUserSafely(order.child_id, {
+      await notificarUsuarioSinFallo(order.child_id, {
         type: 'child_order_paid',
         title: 'Pedido pagado',
         body: 'Tu pedido ya figura como pagado.',
-        data: { orderId: id, targetScreen: 'child-orders' },
+        data: { idPedido: id, targetScreen: 'child-orders' },
       });
 
       return res.json({ order: updated, message: 'Pedido marcado como pagado' });
@@ -422,9 +427,9 @@ export function registerChildOrderRoutes(app, deps) {
     }
   });
 
-  app.put('/api/parent/orders/:id/modify', authenticateToken, async (req, res) => {
+  app.put('/api/parent/orders/:id/modify', autenticarToken, async (req, res) => {
     if (!supabase) return requireSupabase(res);
-    if (!isParentCapableUser(req.user)) return res.status(403).json({ error: 'Solo los padres pueden modificar pedidos' });
+    if (!puedeActuarComoPadre(req.user)) return res.status(403).json({ error: 'Solo los padres pueden modificar pedidos' });
 
     const { id } = req.params;
     const { items } = req.body || {};
@@ -444,8 +449,8 @@ export function registerChildOrderRoutes(app, deps) {
 
       if (orderError || !order) return res.status(404).json({ error: 'Pedido no encontrado o ya procesado' });
 
-      const validatedOrder = await validateOrderItems(items, { userId: order.child_id });
-      const validatedItems = validatedOrder.items.map((item) => ({
+      const validatedOrder = await validarItemsPedido(items, { idUsuario: order.child_id });
+      const itemsValidados = validatedOrder.items.map((item) => ({
         product_id: item.product_id,
         product_name: item.product_name,
         quantity: item.quantity,
@@ -460,32 +465,32 @@ export function registerChildOrderRoutes(app, deps) {
 
       const { error: insertError } = await supabase
         .from('child_order_items')
-        .insert(validatedItems.map((item) => ({ order_id: id, ...item })));
+        .insert(itemsValidados.map((item) => ({ order_id: id, ...item })));
       if (insertError) throw insertError;
 
-      const { data: updated, error: updateError } = await supabase
+      const { data: updated, error: errorActualizacion } = await supabase
         .from('child_orders')
         .update({ subtotal, tax, total, updated_at: new Date().toISOString() })
         .eq('id', id)
         .select()
         .single();
 
-      if (updateError) throw updateError;
+      if (errorActualizacion) throw errorActualizacion;
 
-      return res.json({ order: updated, items: validatedItems, message: 'Pedido modificado exitosamente' });
+      return res.json({ order: updated, items: itemsValidados, message: 'Pedido modificado exitosamente' });
     } catch (error) {
       console.error('Error modifying order:', error);
       return res.status(error.statusCode || 500).json({ error: error.message || 'Error al modificar pedido' });
     }
   });
 
-  app.get('/api/parent/child-orders/history', authenticateToken, async (req, res) => {
+  app.get('/api/parent/child-orders/history', autenticarToken, async (req, res) => {
     if (!supabase) return requireSupabase(res);
-    if (!isParentCapableUser(req.user)) return res.status(403).json({ error: 'Solo los padres pueden ver el historial' });
+    if (!puedeActuarComoPadre(req.user)) return res.status(403).json({ error: 'Solo los padres pueden ver el historial' });
 
     const { child_id, status = 'paid', from_date, to_date } = req.query;
-    const limit = parsePositiveInteger(req.query.limit, 50);
-    const normalizedStatuses = buildOrderStatusAliases(status);
+    const limit = parsearEnteroPositivo(req.query.limit, 50);
+    const normalizedStatuses = construirAliasEstadoPedido(status);
 
     try {
       let query = supabase

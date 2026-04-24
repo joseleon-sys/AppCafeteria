@@ -1,3 +1,4 @@
+// Pantalla principal del usuario autenticado: menu, catalogo y accesos a modales.
 import React, { useState, useEffect, useRef } from "react";
 import SideMenu from "./SideMenu";
 import Categories from "./Categories";
@@ -202,3 +203,5 @@ export default function MainScreen({ user, onLogout, onShowSpinner, onShowCart, 
     </main>
   );
 }
+// Pantalla principal del usuario autenticado: menu, catalogo y accesos a modales.
+// Pantalla principal del usuario autenticado: menu, catalogo y accesos a modales.

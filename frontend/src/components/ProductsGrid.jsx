@@ -1,19 +1,23 @@
+// Grid principal del catalogo: carga productos, favoritos y abre el modal de detalle.
 import React, { useState, useEffect } from "react";
 import ProductCard from "./ProductCard";
 import ProductModal from "./ProductModal";
 import SkeletonLoader from "./SkeletonLoader";
 import { useCart } from "../lib/CartContext";
-import { getActiveProducts, getMyFavorites, updateMyFavorites } from "../lib/api";
+import { obtenerProductosActivos, obtenerMisFavoritos, actualizarMisFavoritos } from "../lib/api";
 
 function normalizeFavoriteId(value) {
+  // Los ids de favoritos se comparan como texto para evitar diferencias por tipo.
   return String(value ?? '').trim();
 }
 
 function isSpecialModeEnabled(user) {
+  // Modo especial usado para ciertos perfiles adultos con codigo de ayuda.
   return Boolean(user?.isAdult && String(user?.specialCode || '').trim().toLowerCase() === 'ayuda');
 }
 
 function inferTechnicalData(name, category) {
+  // Si faltan datos tecnicos del backend, se estiman valores basicos para la ficha.
   const nombre = (name || '').toLowerCase();
   const cat = category === 'sandwich' ? 'bocadillos' : category;
 
@@ -58,26 +62,27 @@ export default function ProductsGrid({ user, mode = 'catalog', selectedCategory 
   const [isLoading, setIsLoading] = useState(true);
   const [products, setProducts] = useState([]);
   const [error, setError] = useState(null);
-  const [favoriteIds, setFavoriteIds] = useState([]);
+  const [idsFavoritos, setFavoriteIds] = useState([]);
   const { addItem } = useCart();
   const specialModeActive = isSpecialModeEnabled(user);
 
   useEffect(() => {
-    let isMounted = true;
+    // Carga favoritos personales para pintar el estado inicial de los corazones.
+    let sigueMontado = true;
 
     const loadFavorites = async () => {
       try {
-        const response = await getMyFavorites();
+        const response = await obtenerMisFavoritos();
         const remoteFavorites = Array.isArray(response?.favorites)
           ? response.favorites.map(normalizeFavoriteId).filter(Boolean)
           : [];
 
-        if (isMounted) {
+        if (sigueMontado) {
           setFavoriteIds(remoteFavorites);
         }
       } catch (favoritesError) {
         console.error('Error al cargar favoritos del usuario:', favoritesError);
-        if (!isMounted) return;
+        if (!sigueMontado) return;
         setFavoriteIds([]);
       }
     };
@@ -85,17 +90,18 @@ export default function ProductsGrid({ user, mode = 'catalog', selectedCategory 
     loadFavorites();
 
     return () => {
-      isMounted = false;
+      sigueMontado = false;
     };
   }, []);
 
   // Cargar productos desde la API
   useEffect(() => {
+    // Carga el menu activo desde la API y lo adapta al formato que espera la UI.
     const fetchProducts = async () => {
       setIsLoading(true);
       setError(null);
       try {
-        const response = await getActiveProducts();
+        const response = await obtenerProductosActivos();
         const apiProducts = response.data || [];
         
         // Transformar productos de la API al formato esperado
@@ -110,12 +116,12 @@ export default function ProductsGrid({ user, mode = 'catalog', selectedCategory 
 
           const inferred = inferTechnicalData(p.name, normalizedCategory);
           const allergens = typeof p.allergens === 'string' ? JSON.parse(p.allergens) : (Array.isArray(p.allergens) ? p.allergens : []);
-          const hasHelpAllergen = allergens.some((allergen) => String(allergen || '').trim().toLowerCase() === 'ayuda');
+          const tieneAlergenoAyuda = allergens.some((allergen) => String(allergen || '').trim().toLowerCase() === 'ayuda');
 
           return {
             id: p.id,
             name: p.name,
-            price: specialModeActive && hasHelpAllergen ? 0 : parseFloat(p.price),
+            price: specialModeActive && tieneAlergenoAyuda ? 0 : parseFloat(p.price),
             originalPrice: parseFloat(p.price),
             category: normalizedCategory,
             description: p.description || '',
@@ -133,7 +139,7 @@ export default function ProductsGrid({ user, mode = 'catalog', selectedCategory 
             sanitaryApproved: p.sanitary_approved !== false,
             sanitaryNotes: p.sanitary_notes || 'Ficha técnica revisada para cafetería escolar.',
             approvedAt: p.approved_at || null,
-            hasHelpAllergen
+            tieneAlergenoAyuda
           };
         });
         
@@ -151,12 +157,12 @@ export default function ProductsGrid({ user, mode = 'catalog', selectedCategory 
 
   // Filtrar productos basado en la categoría y subcategoría seleccionadas
   const filteredProducts = products.filter(product => {
-    if (specialModeActive && !product.hasHelpAllergen) {
+    if (specialModeActive && !product.tieneAlergenoAyuda) {
       return false;
     }
 
     if (mode === 'favorites') {
-      return favoriteIds.includes(normalizeFavoriteId(product.id));
+      return idsFavoritos.includes(normalizeFavoriteId(product.id));
     }
 
     if (specialModeActive) {
@@ -225,7 +231,7 @@ export default function ProductsGrid({ user, mode = 'catalog', selectedCategory 
 
   const handleToggleFavorite = async (productId) => {
     const normalizedProductId = normalizeFavoriteId(productId);
-    const previousFavorites = favoriteIds;
+    const previousFavorites = idsFavoritos;
     const nextFavorites = previousFavorites.includes(normalizedProductId)
       ? previousFavorites.filter((id) => id !== normalizedProductId)
       : [...previousFavorites, normalizedProductId];
@@ -233,7 +239,7 @@ export default function ProductsGrid({ user, mode = 'catalog', selectedCategory 
     setFavoriteIds(nextFavorites);
 
     try {
-      const response = await updateMyFavorites(nextFavorites);
+      const response = await actualizarMisFavoritos(nextFavorites);
       setFavoriteIds(Array.isArray(response?.favorites) ? response.favorites : nextFavorites);
     } catch (favoritesError) {
       console.error('Error al guardar favoritos del usuario:', favoritesError);
@@ -242,11 +248,11 @@ export default function ProductsGrid({ user, mode = 'catalog', selectedCategory 
   };
 
   const favoriteProductsCount = products.filter((product) => {
-    if (!favoriteIds.includes(normalizeFavoriteId(product.id))) {
+    if (!idsFavoritos.includes(normalizeFavoriteId(product.id))) {
       return false;
     }
 
-    if (specialModeActive && !product.hasHelpAllergen) {
+    if (specialModeActive && !product.tieneAlergenoAyuda) {
       return false;
     }
 
@@ -311,7 +317,7 @@ export default function ProductsGrid({ user, mode = 'catalog', selectedCategory 
               key={product.id}
               product={product} 
               onClick={handleShowDetail}
-              isFavorite={favoriteIds.includes(normalizeFavoriteId(product.id))}
+              isFavorite={idsFavoritos.includes(normalizeFavoriteId(product.id))}
               onToggleFavorite={handleToggleFavorite}
             />
           ))

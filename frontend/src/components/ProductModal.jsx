@@ -1,3 +1,4 @@
+// Modal de personalizacion de producto antes de anadirlo al carrito.
 import React, { useEffect, useState } from "react";
 import "./ProductModal.css";
 import TechnicalSheetModal from "./TechnicalSheetModal";
@@ -208,3 +209,5 @@ export default function ProductModal({ product, isOpen, onClose, onAddToCart }) 
     </div>
   );
 }
+// Modal de personalizacion de producto antes de anadirlo al carrito.
+// Modal de personalizacion de producto antes de anadirlo al carrito.

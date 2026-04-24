@@ -1,3 +1,4 @@
+// Modal simple para revisar el carrito y saltar al checkout.
 import React, { useState } from "react";
 import { useCart } from "../lib/CartContext";
 import CheckoutModal from "./CheckoutModal";
@@ -9,7 +10,8 @@ export default function CartModal({ isOpen, onClose, user }) {
 
   if (!isOpen) return null;
 
-  const handleUpdateQuantity = (itemId, newQuantity) => {
+  const gestionarActualizarCantidad = (itemId, newQuantity) => {
+    // Si la cantidad llega a cero, el item se elimina del carrito.
     if (newQuantity <= 0) {
       updateQuantity(itemId, 0); // Remove item
     } else {
@@ -65,14 +67,14 @@ export default function CartModal({ isOpen, onClose, user }) {
                       <div className="quantity-controls">
                         <button 
                           className="quantity-btn"
-                          onClick={() => handleUpdateQuantity(item.id, item.quantity - 1)}
+                          onClick={() => gestionarActualizarCantidad(item.id, item.quantity - 1)}
                         >
                           -
                         </button>
                         <span className="quantity">{item.quantity}</span>
                         <button 
                           className="quantity-btn"
-                          onClick={() => handleUpdateQuantity(item.id, item.quantity + 1)}
+                          onClick={() => gestionarActualizarCantidad(item.id, item.quantity + 1)}
                         >
                           +
                         </button>

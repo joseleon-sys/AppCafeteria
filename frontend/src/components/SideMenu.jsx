@@ -1,3 +1,4 @@
+// Menu lateral con accesos secundarios del usuario autenticado.
 import React from "react";
 import { showInfo } from "./Toast";
 
@@ -19,7 +20,7 @@ export default function SideMenu({ onLogout, onShowProfile, onShowLinkParent }) 
     closeMenu();
   };
 
-  const handleLogout = () => {
+  const gestionarCierreSesion = () => {
     onLogout?.();
     closeMenu();
   };
@@ -58,7 +59,7 @@ export default function SideMenu({ onLogout, onShowProfile, onShowLinkParent }) 
         <li>
           <hr style={{ margin: "12px 0", border: "none", borderTop: "1px solid #f4f4f5" }} />
         </li>
-        <li><button id="logout-menu-btn" className="menu-item menu-item-danger" type="button" onClick={handleLogout}>
+        <li><button id="logout-menu-btn" className="menu-item menu-item-danger" type="button" onClick={gestionarCierreSesion}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{display: 'inline-block', verticalAlign: 'middle', marginRight: '8px'}}>
             <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
             <polyline points="16 17 21 12 16 7"></polyline>

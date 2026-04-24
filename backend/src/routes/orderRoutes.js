@@ -1,14 +1,15 @@
+// Flujo de pedidos de usuarios adultos: validacion, pago y consulta de historico.
 export function registerOrderRoutes(app, deps) {
   const {
     supabase,
     stripe,
     developmentPaymentBypassEnabled,
-    authenticateToken,
-    validateOrderItems,
-    parsePositiveInteger,
-    buildOrderStatusAliases,
-    normalizeHistoricOrderEntry,
-    resolveProfileIdForUser,
+    autenticarToken,
+    validarItemsPedido,
+    parsearEnteroPositivo,
+    construirAliasEstadoPedido,
+    normalizarEntradaHistoricaPedido,
+    resolverIdPerfilParaUsuario,
   } = deps;
 
   function requireSupabase(res) {
@@ -16,6 +17,7 @@ export function registerOrderRoutes(app, deps) {
   }
 
   function mapPedidoItems(lineasPedido = []) {
+    // Convierte el formato de lineas guardado en base de datos a un formato mas simple para la API.
     return Array.isArray(lineasPedido)
       ? lineasPedido.map((item) => {
           const price = Number.parseFloat(item.precio_compra ?? 0) || 0;
@@ -33,9 +35,10 @@ export function registerOrderRoutes(app, deps) {
   }
 
   function mapPedidoToHistoricOrder(order) {
+    // Prepara un pedido ya guardado para mostrarlo como entrada de historial.
     const items = mapPedidoItems(order?.lineas_pedido);
 
-    return normalizeHistoricOrderEntry({
+    return normalizarEntradaHistoricaPedido({
       id: order.id,
       status: order.estado,
       created_at: order.fecha_creacion,
@@ -45,14 +48,15 @@ export function registerOrderRoutes(app, deps) {
     });
   }
 
-  async function createPaidOrderForUser(userId, validatedOrder, paymentMethod = 'dev-bypass') {
+  async function createPaidOrderForUser(idUsuario, validatedOrder, metodoPago = 'dev-bypass') {
+    // Crea el pedido ya pagado y sus lineas asociadas dentro de la base de datos.
     if (!supabase) {
       const error = new Error('Supabase no esta configurado en el backend');
       error.statusCode = 503;
       throw error;
     }
 
-    const profileId = await resolveProfileIdForUser(userId);
+    const profileId = await resolverIdPerfilParaUsuario(idUsuario);
     if (!profileId) {
       const error = new Error('No se pudo resolver el perfil del usuario para guardar el pedido');
       error.statusCode = 400;
@@ -65,7 +69,7 @@ export function registerOrderRoutes(app, deps) {
         id_perfil: profileId,
         id_pagador: profileId,
         estado: 'PAGADO',
-        id_pasarela_pago: paymentMethod,
+        id_pasarela_pago: metodoPago,
       })
       .select()
       .single();
@@ -93,7 +97,8 @@ export function registerOrderRoutes(app, deps) {
     };
   }
 
-  app.post('/api/orders', authenticateToken, async (req, res) => {
+  app.post('/api/orders', autenticarToken, async (req, res) => {
+    // Ruta directa para pedidos ya aprobados, solo para usuarios que no son hijos.
     const { items } = req.body || {};
 
     if (!supabase) return requireSupabase(res);
@@ -105,7 +110,7 @@ export function registerOrderRoutes(app, deps) {
     }
 
     try {
-      const validatedOrder = await validateOrderItems(items, { userId: req.user.id });
+      const validatedOrder = await validarItemsPedido(items, { idUsuario: req.user.id });
       const order = await createPaidOrderForUser(req.user, validatedOrder, 'manual');
 
       return res.status(201).json({
@@ -120,7 +125,8 @@ export function registerOrderRoutes(app, deps) {
     }
   });
 
-  app.post('/api/stripe/create-checkout-session', authenticateToken, async (req, res) => {
+  app.post('/api/stripe/create-checkout-session', autenticarToken, async (req, res) => {
+    // Crea la sesion de Stripe o, en desarrollo, puede saltarse la pasarela si esta permitido.
     if (!supabase) return requireSupabase(res);
 
     try {
@@ -130,7 +136,7 @@ export function registerOrderRoutes(app, deps) {
         return res.status(400).json({ error: 'El carrito está vacío' });
       }
 
-      const validatedOrder = await validateOrderItems(items, { userId: req.user.id });
+      const validatedOrder = await validarItemsPedido(items, { idUsuario: req.user.id });
 
       if (developmentPaymentBypassEnabled) {
         const order = await createPaidOrderForUser(req.user, validatedOrder);
@@ -177,19 +183,19 @@ export function registerOrderRoutes(app, deps) {
     }
   });
 
-  app.get('/api/orders/my', authenticateToken, async (req, res) => {
+  app.get('/api/orders/my', autenticarToken, async (req, res) => {
     if (!supabase) return requireSupabase(res);
 
     const { status } = req.query;
-    const limit = parsePositiveInteger(req.query.limit, 50);
-    const normalizedStatuses = buildOrderStatusAliases(status);
+    const limit = parsearEnteroPositivo(req.query.limit, 50);
+    const normalizedStatuses = construirAliasEstadoPedido(status);
 
     if (req.user.role === 'child') {
       return res.status(403).json({ error: 'Los perfiles de menor deben consultar sus pedidos infantiles' });
     }
 
     try {
-      const profileId = await resolveProfileIdForUser(req.user);
+      const profileId = await resolverIdPerfilParaUsuario(req.user);
       if (!profileId) {
         return res.status(400).json({ error: 'No se pudo resolver el perfil del usuario para consultar pedidos' });
       }
@@ -228,18 +234,18 @@ export function registerOrderRoutes(app, deps) {
     }
   });
 
-  app.get('/api/orders/:id', authenticateToken, async (req, res) => {
+  app.get('/api/orders/:id', autenticarToken, async (req, res) => {
     if (!supabase) return requireSupabase(res);
 
-    const orderId = String(req.params.id || '').trim();
+    const idPedido = String(req.params.id || '').trim();
 
-    if (!orderId) return res.status(400).json({ error: 'ID de pedido invalido' });
+    if (!idPedido) return res.status(400).json({ error: 'ID de pedido invalido' });
     if (req.user.role === 'child') {
       return res.status(403).json({ error: 'Los perfiles de menor deben consultar sus pedidos infantiles' });
     }
 
     try {
-      const profileId = await resolveProfileIdForUser(req.user);
+      const profileId = await resolverIdPerfilParaUsuario(req.user);
       if (!profileId) {
         return res.status(400).json({ error: 'No se pudo resolver el perfil del usuario para consultar el pedido' });
       }
@@ -260,7 +266,7 @@ export function registerOrderRoutes(app, deps) {
             notas
           )
         `)
-        .eq('id', orderId);
+        .eq('id', idPedido);
 
       if (req.user.role !== 'admin') {
         query = query.or(`id_perfil.eq.${profileId},id_pagador.eq.${profileId}`);

@@ -1,14 +1,17 @@
+// Integracion con Sentry para capturar errores del backend.
 import * as Sentry from '@sentry/node';
 
 let initialized = false;
 
 function parseSampleRate(value, fallback) {
+  // Asegura que el porcentaje de muestreo quede entre 0 y 1.
   const parsed = Number.parseFloat(value);
   if (!Number.isFinite(parsed)) return fallback;
   return Math.min(Math.max(parsed, 0), 1);
 }
 
 export function initSentry() {
+  // Inicializa Sentry una sola vez para toda la aplicacion.
   if (initialized) return Sentry;
 
   const dsn = (process.env.SENTRY_DSN || '').trim();
@@ -35,10 +38,12 @@ export function initSentry() {
 }
 
 export function isSentryEnabled() {
+  // Indica si Sentry esta realmente activo con configuracion valida.
   return initialized && Boolean((process.env.SENTRY_DSN || '').trim()) && process.env.SENTRY_ENABLED !== 'false';
 }
 
 export function captureServerResponse(req, res) {
+  // Solo enviamos a Sentry respuestas de error grave del servidor.
   if (!isSentryEnabled() || res.statusCode < 500) return;
 
   Sentry.withScope((scope) => {
@@ -49,7 +54,7 @@ export function captureServerResponse(req, res) {
       method: req.method,
       path: req.originalUrl || req.url,
       statusCode: res.statusCode,
-      requestId: req.id,
+      idSolicitud: req.id,
     });
 
     if (req.user?.id) {
@@ -61,6 +66,7 @@ export function captureServerResponse(req, res) {
 }
 
 export function registerSentryErrorHandler(app) {
+  // Registra el middleware oficial de Sentry al final del pipeline de Express.
   if (isSentryEnabled()) {
     Sentry.setupExpressErrorHandler(app);
   }
