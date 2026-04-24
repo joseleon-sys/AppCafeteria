@@ -493,6 +493,11 @@ export function registerChildOrderRoutes(app, deps) {
     const normalizedStatuses = construirAliasEstadoPedido(status);
 
     try {
+      const profileId = await resolveProfileIdForUser(req.user);
+      if (!profileId) {
+        return res.status(400).json({ error: 'No se pudo resolver el perfil del usuario para consultar el historial' });
+      }
+
       let query = supabase
         .from('pedidos')
         .select(`

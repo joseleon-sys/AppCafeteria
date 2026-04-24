@@ -69,6 +69,9 @@ function estaActivoSaltoPagoDesarrollo({
   return parsearValorBooleano(process.env.DEV_BYPASS_STRIPE_PAYMENT, false);
 }
 
+function isStripeSecretKey(key) {
+  return /^(sk|rk)_(test|live)_/.test(String(key || '').trim());
+}
 
 export function crearContextoApp() {
   // Inicializa observabilidad lo antes posible para capturar errores desde el arranque.
@@ -103,9 +106,18 @@ export function crearContextoApp() {
   const bypassRequestedInDisabledEnvironment = (isProduction || isHosted) && parsearValorBooleano(process.env.DEV_BYPASS_STRIPE_PAYMENT, false);
   const developmentPaymentBypassEnabled = estaActivoSaltoPagoDesarrollo({ isProduction, isHosted });
   const stripeSecretKey = (process.env.STRIPE_SECRET_KEY || '').trim();
+  const hasInvalidStripeSecretKey = Boolean(stripeSecretKey) && !isStripeSecretKey(stripeSecretKey);
 
   if (bypassRequestedInDisabledEnvironment) {
     console.warn('DEV_BYPASS_STRIPE_PAYMENT esta activo en produccion/Railway, pero se ignorara para no saltar Stripe.');
+  }
+
+  if (hasInvalidStripeSecretKey) {
+    const message = 'STRIPE_SECRET_KEY debe ser una clave de servidor de Stripe (sk_test_..., sk_live_..., rk_test_... o rk_live_...), no una clave publicable pk_...';
+    if ((isProduction || isHosted) && !developmentPaymentBypassEnabled) {
+      throw new Error(message);
+    }
+    console.warn(`${message}. Stripe quedara deshabilitado hasta definir una clave valida.`);
   }
 
   if (!stripeSecretKey) {
@@ -115,7 +127,7 @@ export function crearContextoApp() {
     console.warn('STRIPE_SECRET_KEY no configurado. Stripe quedara deshabilitado hasta definir la clave.');
   }
 
-  const stripe = stripeSecretKey ? new Stripe(stripeSecretKey) : null;
+  const stripe = stripeSecretKey && !hasInvalidStripeSecretKey ? new Stripe(stripeSecretKey) : null;
 
   console.log('Supabase configurado. Se usara como unico origen de datos.');
 

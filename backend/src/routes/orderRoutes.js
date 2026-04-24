@@ -151,8 +151,13 @@ export function registerOrderRoutes(app, deps) {
       }
 
       if (!stripe) {
+        const stripeSecretKey = String(process.env.STRIPE_SECRET_KEY || '').trim();
+        const hasPublishableStripeKey = /^pk_(test|live)_/.test(stripeSecretKey);
+
         return res.status(503).json({
-          error: 'Stripe no está configurado en el backend. Define STRIPE_SECRET_KEY o activa DEV_BYPASS_STRIPE_PAYMENT en desarrollo.',
+          error: hasPublishableStripeKey
+            ? 'STRIPE_SECRET_KEY debe ser una clave de servidor de Stripe (sk_test_..., sk_live_..., rk_test_... o rk_live_...), no una clave publicable pk_...'
+            : 'Stripe no está configurado en el backend. Define STRIPE_SECRET_KEY o activa DEV_BYPASS_STRIPE_PAYMENT en desarrollo.',
         });
       }
 
