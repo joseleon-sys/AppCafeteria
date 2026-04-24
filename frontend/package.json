@@ -19,7 +19,7 @@
     "react-dom": "^18.2.0"
   },
   "devDependencies": {
-    "@capacitor/cli": "^8.3.1",
+    "@capacitor/cli": "^7.6.1",
     "vite": "^5.0.0"
   }
 }
