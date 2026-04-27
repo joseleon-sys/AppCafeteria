@@ -6,14 +6,14 @@ import { deleteAdminUserSchema, updateAdminUserSchema, updateUserBlockSchema } f
 
 export function registerAdminRoutes(app, deps) {
   const {
-    autenticarToken,
-    requireAdmin,
+    requireAuth,
+    requireRole,
   } = deps;
 
   const repository = crearAdminRepository(deps);
   const service = crearAdminService(deps, repository);
   const controller = crearAdminController(service);
-  const adminMiddlewares = [autenticarToken, requireAdmin];
+  const adminMiddlewares = [requireAuth, requireRole('admin')];
 
   app.get('/api/admin/statistics', ...adminMiddlewares, controller.obtenerMetricas);
   app.get('/api/admin/fraud-log', ...adminMiddlewares, controller.listarFraudLogs);

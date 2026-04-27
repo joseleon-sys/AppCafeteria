@@ -1302,8 +1302,6 @@ const init = () => {
   
   // Adjuntar event listeners
   attachEventListeners();
-  
-  console.log('✅ CafeteriaApp mockup inicializado');
 };
 
 // Iniciar aplicación cuando el DOM esté listo

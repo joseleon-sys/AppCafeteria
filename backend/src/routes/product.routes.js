@@ -6,17 +6,19 @@ import { createProductSchema, updateProductSchema } from './product.validators.j
 
 export function registerProductRoutes(app, deps) {
   const {
-    autenticarToken,
-    requireAdmin,
+    requireAuth,
+    requireRole,
   } = deps;
 
   const repository = crearProductRepository(deps);
   const service = crearProductService(deps, repository);
   const controller = crearProductController(service);
 
-  app.get('/api/products', autenticarToken, requireAdmin, controller.listarProductosAdmin);
+  const adminOnly = [requireAuth, requireRole('admin')];
+
+  app.get('/api/products', ...adminOnly, controller.listarProductosAdmin);
   app.get('/api/menu', controller.listarMenuPublico);
-  app.post('/api/products', autenticarToken, requireAdmin, validateRequest(createProductSchema), controller.crearProducto);
-  app.put('/api/products/:id', autenticarToken, requireAdmin, validateRequest(updateProductSchema), controller.actualizarProducto);
-  app.delete('/api/products/:id', autenticarToken, requireAdmin, controller.eliminarProducto);
+  app.post('/api/products', ...adminOnly, validateRequest(createProductSchema), controller.crearProducto);
+  app.put('/api/products/:id', ...adminOnly, validateRequest(updateProductSchema), controller.actualizarProducto);
+  app.delete('/api/products/:id', ...adminOnly, controller.eliminarProducto);
 }

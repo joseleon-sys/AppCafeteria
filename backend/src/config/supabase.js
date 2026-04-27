@@ -14,8 +14,5 @@ export function createSupabaseClient() {
     throw new Error('SUPABASE_URL y SUPABASE_SECRET_KEY/SUPABASE_SERVICE_ROLE_KEY son obligatorios');
   }
 
-  const supabase = createClient(supabaseUrl, supabaseServerKey);
-  console.log('Supabase configurado. Se usara como unico origen de datos.');
-
-  return supabase;
+  return createClient(supabaseUrl, supabaseServerKey);
 }

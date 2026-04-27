@@ -6,7 +6,7 @@ import { loginSchema, logoutSchema, refreshTokenSchema, registerSchema } from '.
 
 export function registerAuthRoutes(app, deps) {
   const {
-    autenticarToken,
+    requireAuth,
     registrationRateLimiter,
     loginRateLimiter,
   } = deps;
@@ -20,14 +20,14 @@ export function registerAuthRoutes(app, deps) {
   app.post('/api/auth/refresh', validateRequest(refreshTokenSchema), controller.refrescarSesion);
   app.post('/api/auth/logout', validateRequest(logoutSchema), controller.cerrarSesion);
   app.post('/api/auth/reset-password', controller.restablecerContrasena);
-  app.get('/api/auth/me', autenticarToken, controller.obtenerUsuarioActual);
+  app.get('/api/auth/me', requireAuth, controller.obtenerUsuarioActual);
 
-  app.post('/api/notifications/devices', autenticarToken, controller.registrarDispositivo);
-  app.delete('/api/notifications/devices/:token', autenticarToken, controller.desactivarDispositivo);
-  app.get('/api/notifications', autenticarToken, controller.listarNotificaciones);
-  app.put('/api/notifications/:id/read', autenticarToken, controller.marcarNotificacionLeida);
+  app.post('/api/notifications/devices', requireAuth, controller.registrarDispositivo);
+  app.delete('/api/notifications/devices/:token', requireAuth, controller.desactivarDispositivo);
+  app.get('/api/notifications', requireAuth, controller.listarNotificaciones);
+  app.put('/api/notifications/:id/read', requireAuth, controller.marcarNotificacionLeida);
 
-  app.get('/api/auth/favorites', autenticarToken, controller.obtenerFavoritos);
-  app.put('/api/auth/favorites', autenticarToken, controller.actualizarFavoritos);
-  app.put('/api/auth/profile', autenticarToken, controller.actualizarPerfil);
+  app.get('/api/auth/favorites', requireAuth, controller.obtenerFavoritos);
+  app.put('/api/auth/favorites', requireAuth, controller.actualizarFavoritos);
+  app.put('/api/auth/profile', requireAuth, controller.actualizarPerfil);
 }

@@ -19,7 +19,7 @@ export function crearAdminRepository({ supabase }) {
     listarUsuarios() {
       return supabase
         .from('users')
-        .select('id, email, nombre, role, is_adult, created_at, bloqueado');
+        .select('id, email, nombre, role, is_adult, created_at, active');
     },
 
     listarVinculosActivosPadres() {
@@ -30,7 +30,7 @@ export function crearAdminRepository({ supabase }) {
     },
 
     actualizarBloqueoUsuario(id, bloqueado) {
-      return supabase.from('users').update({ bloqueado }).eq('id', id).select();
+      return supabase.from('users').update({ active: !bloqueado }).eq('id', id).select();
     },
 
     actualizarUsuario(id, updateData) {

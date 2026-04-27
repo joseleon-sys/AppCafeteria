@@ -12,7 +12,6 @@ export async function logSecurityEvent(supabase, {
   req
 }) {
   if (!supabase) {
-    console.log('[FRAUD LOG]', { idUsuario, actionType, severity, details });
     return;
   }
   

@@ -254,8 +254,6 @@ const CartPreview = () => {
     await new Promise(resolve => setTimeout(resolve, 4000));
     
     addMessage('¡Demo de checkout ejecutada! En la app real se procesaría el pedido.', 'success');
-    console.log('Cart items:', cartItems);
-    console.log('Total:', (subtotal - discount + 2.50).toFixed(2) + '€');
     
     setIsProcessingOrder(false);
   };

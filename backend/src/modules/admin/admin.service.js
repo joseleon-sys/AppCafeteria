@@ -89,7 +89,7 @@ export function crearAdminService(deps, repository) {
       role: user.role,
       is_adult: user.is_adult,
       created_at: user.created_at,
-      bloqueado: user.bloqueado || false,
+      bloqueado: user.active === false,
       children_count: childrenByParent[String(user.id)] || 0,
     };
   }

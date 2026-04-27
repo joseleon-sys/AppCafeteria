@@ -1,12 +1,20 @@
 // Este archivo prepara el "contexto" comun del backend:
 // dependencias, helpers de dominio y utilidades compartidas.
-import jwt from 'jsonwebtoken';
 import { randomBytes } from 'crypto';
 import { createRuntimeConfig, loadEnvironment } from './config/env.js';
 import { createSupabaseClient } from './config/supabase.js';
 import { createStripeConfig } from './config/stripe.js';
 import { createExpressApp } from './app/expressApp.js';
 import { createServerLifecycle } from './app/serverLifecycle.js';
+import {
+  createRequireAuth,
+  puedeActuarComoPadre,
+  requireAdmin,
+  requireAdultUser,
+  requireAnyRole,
+  requireRole,
+  USER_ROLES,
+} from './middlewares/auth.middleware.js';
 import {
   loginRateLimiter,
   registrationRateLimiter,
@@ -27,7 +35,7 @@ import {
   marcarNotificacionComoLeida,
   enviarPushAUsuario,
 } from './services/notificationService.js';
-import { Sentry, initSentry, isSentryEnabled } from './observability/sentry.js';
+import { initSentry, isSentryEnabled } from './observability/sentry.js';
 import {
   utilidadesApp,
   construirNotasLineaPedido,
@@ -35,7 +43,6 @@ import {
   normalizarCodigoEspecial,
   transformarProducto,
 } from './utils/utilidadesApp.js';
-import { AppError } from './shared/errors/AppError.js';
 
 export function crearContextoApp() {
   // Inicializa observabilidad lo antes posible para capturar errores desde el arranque.
@@ -47,34 +54,8 @@ export function crearContextoApp() {
   const { stripe, developmentPaymentBypassEnabled } = createStripeConfig({ isProduction, isHosted });
   const app = createExpressApp({ supabase, isHosted, isProduction });
 
-  function autenticarToken(req, res, next) {
-    // Middleware JWT: extrae el token, lo valida y guarda el usuario en req.user.
-    const authHeader = req.headers.authorization;
-    const token = authHeader && authHeader.split(' ')[1];
-    if (!token) return next(new AppError('Token no proporcionado', 401));
-    jwt.verify(token, JWT_SECRET, (err, user) => {
-      if (err) return next(new AppError('Token inválido', 403));
-      req.user = user;
-      if (isSentryEnabled() && user?.id) {
-        Sentry.setUser({ id: String(user.id), role: user.role });
-      }
-      next();
-    });
-  }
-
-  function puedeActuarComoPadre(user) {
-    // Regla de negocio actual: cualquier usuario que no sea "child" puede actuar como padre.
-    if (!user) return false;
-    return user.role !== 'child';
-  }
-
-  function requireAdmin(req, res, next) {
-    // Limita una ruta solo a usuarios con rol admin.
-    if (!req.user || req.user.role !== 'admin') {
-      return next(new AppError('Acceso denegado: solo administradores', 403));
-    }
-    next();
-  }
+  const requireAuth = createRequireAuth({ jwtSecret: JWT_SECRET });
+  const autenticarToken = requireAuth;
 
   async function notificarUsuarioSinFallo(idUsuario, payload) {
     // Envia notificacion, pero sin romper el flujo principal si falla el push.
@@ -305,7 +286,12 @@ export function crearContextoApp() {
     supabase,
     stripe,
     developmentPaymentBypassEnabled,
+    USER_ROLES,
+    requireAuth,
     autenticarToken,
+    requireRole,
+    requireAnyRole,
+    requireAdultUser,
     requireAdmin,
     puedeActuarComoPadre,
     notificarUsuarioSinFallo,

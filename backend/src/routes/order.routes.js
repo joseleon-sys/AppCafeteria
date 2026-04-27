@@ -5,14 +5,15 @@ import { validateRequest } from '../middlewares/validateRequest.js';
 import { createOrderSchema, listOrdersQuerySchema, orderIdParamsSchema } from './order.validators.js';
 
 export function registerOrderRoutes(app, deps) {
-  const { autenticarToken } = deps;
+  const { requireAuth, requireAdultUser } = deps;
 
   const repository = crearOrderRepository(deps);
   const service = crearOrderService(deps, repository);
   const controller = crearOrderController(service);
+  const adultOrderMiddlewares = [requireAuth, requireAdultUser];
 
-  app.post('/api/orders', autenticarToken, validateRequest(createOrderSchema), controller.crearPedidoManual);
-  app.post('/api/stripe/create-checkout-session', autenticarToken, validateRequest(createOrderSchema), controller.crearCheckoutSession);
-  app.get('/api/orders/my', autenticarToken, validateRequest({ query: listOrdersQuerySchema }), controller.listarMisPedidos);
-  app.get('/api/orders/:id', autenticarToken, validateRequest({ params: orderIdParamsSchema }), controller.obtenerPedido);
+  app.post('/api/orders', ...adultOrderMiddlewares, validateRequest(createOrderSchema), controller.crearPedidoManual);
+  app.post('/api/stripe/create-checkout-session', ...adultOrderMiddlewares, validateRequest(createOrderSchema), controller.crearCheckoutSession);
+  app.get('/api/orders/my', ...adultOrderMiddlewares, validateRequest({ query: listOrdersQuerySchema }), controller.listarMisPedidos);
+  app.get('/api/orders/:id', ...adultOrderMiddlewares, validateRequest({ params: orderIdParamsSchema }), controller.obtenerPedido);
 }

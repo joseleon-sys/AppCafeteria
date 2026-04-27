@@ -9,6 +9,7 @@ import { registerProductRoutes } from '../routes/product.routes.js';
 import { registerAdminRoutes } from '../modules/admin/admin.routes.js';
 import { registerChildOrderRoutes } from '../modules/childOrders/childOrders.routes.js';
 import { registerSentryErrorHandler } from '../observability/sentry.js';
+import { registerSwaggerRoutes } from '../docs/swagger.routes.js';
 
 export function createServerApp() {
   // Construimos una sola vez todo lo comun que las rutas necesitan.
@@ -23,6 +24,7 @@ export function createServerApp() {
   registerProductRoutes(app, context);
   registerAdminRoutes(app, context);
   registerChildOrderRoutes(app, context);
+  registerSwaggerRoutes(app);
   registerSentryErrorHandler(app);
   registerNotFoundHandler(app);
   registerErrorHandler(app);

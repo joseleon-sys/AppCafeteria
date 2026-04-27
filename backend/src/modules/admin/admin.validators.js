@@ -36,7 +36,12 @@ export function validarIdUsuario(rawId) {
 }
 
 export function validarBloqueoUsuario(body = {}) {
-  return { valid: true, bloqueado: Boolean(body.bloqueado) };
+  const rawValue = body.bloqueado;
+  const bloqueado = typeof rawValue === 'string'
+    ? ['true', '1', 'si', 'sí'].includes(rawValue.trim().toLowerCase())
+    : Boolean(rawValue);
+
+  return { valid: true, bloqueado };
 }
 
 export function validarCambiosUsuario(body = {}) {
