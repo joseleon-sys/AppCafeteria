@@ -1,5 +1,5 @@
 // Utilidades del frontend para guardar y recuperar la sesion del usuario.
-import { obtenerUsuarioActual } from './api';
+import { limpiarTokensAuth, obtenerUsuarioActual } from './api';
 
 const TOKEN_KEY = 'cafeteria_token';
 const USER_KEY = 'cafeteria_user';
@@ -31,7 +31,7 @@ export function guardarUsuario(user) {
 
 export function limpiarSesion() {
   // Borra los datos locales de sesion.
-  localStorage.removeItem(TOKEN_KEY);
+  limpiarTokensAuth();
   localStorage.removeItem(USER_KEY);
 }
 

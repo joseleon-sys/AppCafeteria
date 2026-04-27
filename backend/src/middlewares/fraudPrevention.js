@@ -1,6 +1,7 @@
 // Sistema de prevencion de fraude y registro de eventos de seguridad.
 
 import { getClientIP } from './rateLimiter.js';
+import { AppError } from '../shared/errors/AppError.js';
 
 // Guarda un evento de seguridad para poder auditar despues comportamientos sospechosos.
 export async function logSecurityEvent(supabase, {
@@ -118,7 +119,7 @@ export function requireTrustScore(minimumScore = 40) {
     const idUsuario = req.user?.id;
     
     if (!idUsuario) {
-      return res.status(401).json({ error: 'No autenticado' });
+      return next(new AppError('No autenticado', 401));
     }
     
     const score = await calculateTrustScore(req.supabase, idUsuario);
@@ -132,10 +133,9 @@ export function requireTrustScore(minimumScore = 40) {
         req
       });
       
-      return res.status(403).json({ 
-        error: 'Tu cuenta requiere verificación adicional. Contacta con soporte.',
-        trustScore: score
-      });
+      return next(new AppError('Tu cuenta requiere verificación adicional. Contacta con soporte.', 403, {
+        extra: { trustScore: score },
+      }));
     }
     
     req.trustScore = score;

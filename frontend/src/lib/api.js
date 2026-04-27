@@ -14,10 +14,27 @@ function urlsUnicas(urls) {
 const URL_API = normalizarUrlApi(import.meta.env.VITE_API_URL || import.meta.env.BACKEND_URL || URL_API_POR_DEFECTO);
 const URL_API_RESPALDO = normalizarUrlApi(import.meta.env.VITE_API_FALLBACK_URL || import.meta.env.VITE_RAILWAY_API_URL);
 const URLS_API = urlsUnicas([URL_API, URL_API_RESPALDO]);
+const ACCESS_TOKEN_KEY = 'cafeteria_token';
+const REFRESH_TOKEN_KEY = 'cafeteria_refresh_token';
 
 function obtenerTokenAuth() {
   // Recupera el JWT guardado en el navegador.
-  return localStorage.getItem('cafeteria_token');
+  return localStorage.getItem(ACCESS_TOKEN_KEY);
+}
+
+function obtenerRefreshTokenAuth() {
+  return localStorage.getItem(REFRESH_TOKEN_KEY);
+}
+
+export function guardarTokensAuth(payload = {}) {
+  const accessToken = payload.accessToken || payload.token;
+  if (accessToken) localStorage.setItem(ACCESS_TOKEN_KEY, accessToken);
+  if (payload.refreshToken) localStorage.setItem(REFRESH_TOKEN_KEY, payload.refreshToken);
+}
+
+export function limpiarTokensAuth() {
+  localStorage.removeItem(ACCESS_TOKEN_KEY);
+  localStorage.removeItem(REFRESH_TOKEN_KEY);
 }
 
 function obtenerCabecerasAuth(includeContentType = false) {
@@ -51,6 +68,26 @@ async function gestionarRespuesta(response) {
   return payload;
 }
 
+async function refrescarAccessToken(baseUrl) {
+  const refreshToken = obtenerRefreshTokenAuth();
+  if (!refreshToken) return null;
+
+  const response = await fetch(`${baseUrl}/api/auth/refresh`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ refreshToken }),
+  });
+
+  if (!response.ok) {
+    limpiarTokensAuth();
+    return null;
+  }
+
+  const payload = await response.json().catch(() => null);
+  guardarTokensAuth(payload || {});
+  return payload?.accessToken || payload?.token || null;
+}
+
 async function peticionApi(path, options = {}, { auth = false, contentType = false } = {}) {
   // Funcion base reutilizada por el resto de llamadas a la API.
   const headers = {
@@ -76,6 +113,23 @@ async function peticionApi(path, options = {}, { auth = false, contentType = fal
 
       lastNetworkError = error;
       continue;
+    }
+
+    if (auth && (response.status === 401 || response.status === 403)) {
+      const nuevoAccessToken = await refrescarAccessToken(baseUrl);
+      if (nuevoAccessToken) {
+        const retryHeaders = {
+          ...headers,
+          Authorization: `Bearer ${nuevoAccessToken}`,
+        };
+
+        const retryResponse = await fetch(`${baseUrl}${path}`, {
+          ...options,
+          headers: retryHeaders,
+        });
+
+        return gestionarRespuesta(retryResponse);
+      }
     }
 
     return gestionarRespuesta(response);
@@ -107,6 +161,13 @@ export async function restablecerContrasena(payload) {
   return peticionApi('/api/auth/reset-password', {
     method: 'POST',
     body: JSON.stringify(payload),
+  }, { contentType: true });
+}
+
+export async function cerrarSesion(refreshToken = obtenerRefreshTokenAuth()) {
+  return peticionApi('/api/auth/logout', {
+    method: 'POST',
+    body: JSON.stringify({ refreshToken }),
   }, { contentType: true });
 }
 
@@ -369,6 +430,7 @@ export default {
   URLS_API,
   iniciarSesion,
   registrarUsuario,
+  cerrarSesion,
   obtenerTodosLosProductos,
   obtenerProductosActivos,
   crearProducto,

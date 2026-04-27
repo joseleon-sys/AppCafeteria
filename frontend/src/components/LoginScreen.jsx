@@ -1,6 +1,6 @@
 // Variante de pantalla de login mas sencilla o antigua del proyecto.
 import React, { useState } from "react";
-import { iniciarSesion } from "../lib/api";
+import { guardarTokensAuth, iniciarSesion } from "../lib/api";
 
 export default function LoginScreen({ onLogin }) {
   const [email, setEmail] = useState("");
@@ -15,7 +15,7 @@ export default function LoginScreen({ onLogin }) {
 
     try {
       const data = await iniciarSesion({ email, password });
-      localStorage.setItem('cafeteria_token', data.token);
+      guardarTokensAuth(data);
       onLogin && onLogin(data.user);
     } catch (err) {
       setError(err.message || "Usuario o contraseña incorrectos");

@@ -11,8 +11,10 @@ import {
   eliminarUsuario,
   obtenerEstadisticasAdmin,
   obtenerRegistroFraude,
-  obtenerColaPedidosAdmin
+  obtenerColaPedidosAdmin,
+  cerrarSesion,
 } from "../lib/api";
+import { limpiarSesion } from "../lib/sesion";
 import "./AdminDashboard.css";
 
 const MENU_ITEMS = [
@@ -126,9 +128,13 @@ export default function AdminDashboard({ onLogout }) {
     }
   };
 
-  const gestionarCierreSesion = () => {
-    localStorage.removeItem('cafeteria_user');
-    localStorage.removeItem('cafeteria_token');
+  const gestionarCierreSesion = async () => {
+    try {
+      await cerrarSesion();
+    } catch (error) {
+      console.error('Error cerrando sesión:', error);
+    }
+    limpiarSesion();
     if (onLogout) onLogout();
   };
 

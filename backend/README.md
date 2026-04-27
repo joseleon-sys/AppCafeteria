@@ -12,7 +12,7 @@ La persistencia del backend usa Supabase siempre.
 
 ## Dependencias
 
-- Producción: `@supabase/supabase-js`, `bcryptjs`, `cors`, `dotenv`, `express`, `firebase-admin`, `jsonwebtoken`, `stripe`, `@sentry/node`, `pino-http`
+- Producción: `@supabase/supabase-js`, `bcryptjs`, `cors`, `dotenv`, `express`, `express-rate-limit`, `firebase-admin`, `helmet`, `jsonwebtoken`, `stripe`, `@sentry/node`, `pino-http`
 - Desarrollo: `nodemon`
 
 ## Variables de entorno mínimas
@@ -24,6 +24,19 @@ JWT_SECRET=tu-clave-jwt
 PORT=3000
 FRONTEND_URL=http://localhost:5173
 ```
+
+### CORS
+
+`FRONTEND_URL` controla los origenes permitidos por CORS. Puede ser un unico origen
+o una lista separada por comas, por ejemplo:
+
+```env
+FRONTEND_URL=http://localhost:5173,https://app.example.com
+```
+
+Si `FRONTEND_URL` esta vacio en desarrollo, el backend permite los origenes locales
+habituales de Vite/Capacitor para no romper el trabajo local. En produccion debe
+estar configurado con el dominio real del frontend.
 
 Opcionales:
 

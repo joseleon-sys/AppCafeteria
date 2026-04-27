@@ -1,4 +1,6 @@
 // Limitadores simples en memoria para frenar abusos comunes.
+import rateLimit from 'express-rate-limit';
+import { AppError } from '../shared/errors/AppError.js';
 
 const loginAttempts = new Map(); // IP -> { count, firstAttempt }
 const registrationAttempts = new Map(); // IP -> { count, firstAttempt }
@@ -21,6 +23,30 @@ function cleanOldRecords(map, maxAge) {
       map.delete(key);
     }
   }
+}
+
+function createRateLimitError(message, req) {
+  const retryAfter = req.rateLimit?.resetTime
+    ? Math.max(1, Math.ceil((req.rateLimit.resetTime.getTime() - Date.now()) / 1000))
+    : undefined;
+
+  return new AppError(message, 429, {
+    extra: retryAfter ? { retryAfter } : undefined,
+  });
+}
+
+export function createGeneralRateLimiter() {
+  return rateLimit({
+    windowMs: 15 * 60 * 1000,
+    limit: 300,
+    standardHeaders: 'draft-7',
+    legacyHeaders: false,
+    skip: (req) => req.path === '/api/health',
+    handler: (req, _res, next) => next(createRateLimitError(
+      'Demasiadas solicitudes. Intentalo de nuevo en unos minutos.',
+      req,
+    )),
+  });
 }
 
 // Permite como maximo 5 intentos de login por hora y por IP.
@@ -47,10 +73,9 @@ export function loginRateLimiter(req, res, next) {
   // Verificar límite
   if (attempts.count >= 5) {
     const timeRemaining = Math.ceil((oneHour - (now - attempts.firstAttempt)) / 60000);
-    return res.status(429).json({ 
-      error: `Demasiados intentos de login. Espera ${timeRemaining} minutos.`,
-      retryAfter: timeRemaining
-    });
+    return next(new AppError(`Demasiados intentos de login. Espera ${timeRemaining} minutos.`, 429, {
+      extra: { retryAfter: timeRemaining },
+    }));
   }
   
   attempts.count++;
@@ -81,10 +106,9 @@ export function registrationRateLimiter(req, res, next) {
   // Verificar límite
   if (attempts.count >= 3) {
     const hoursRemaining = Math.ceil((oneDay - (now - attempts.firstAttempt)) / 3600000);
-    return res.status(429).json({ 
-      error: `Demasiados registros desde esta IP. Espera ${hoursRemaining} horas.`,
-      retryAfter: hoursRemaining
-    });
+    return next(new AppError(`Demasiados registros desde esta IP. Espera ${hoursRemaining} horas.`, 429, {
+      extra: { retryAfter: hoursRemaining },
+    }));
   }
   
   attempts.count++;
@@ -96,7 +120,7 @@ export function linkingRateLimiter(req, res, next) {
   const idUsuario = req.user?.id;
   
   if (!idUsuario) {
-    return res.status(401).json({ error: 'No autenticado' });
+    return next(new AppError('No autenticado', 401));
   }
   
   const now = Date.now();
@@ -120,10 +144,9 @@ export function linkingRateLimiter(req, res, next) {
   // Verificar límite
   if (attempts.count >= 10) {
     const hoursRemaining = Math.ceil((oneDay - (now - attempts.firstAttempt)) / 3600000);
-    return res.status(429).json({ 
-      error: `Demasiadas solicitudes de vinculación. Espera ${hoursRemaining} horas.`,
-      retryAfter: hoursRemaining
-    });
+    return next(new AppError(`Demasiadas solicitudes de vinculación. Espera ${hoursRemaining} horas.`, 429, {
+      extra: { retryAfter: hoursRemaining },
+    }));
   }
   
   attempts.count++;

@@ -86,8 +86,8 @@ JWT_SECRET=tu_secret_seguro_aqui_minimo_32_caracteres
 
 # BD
 NODE_ENV=development
-SUPABASE_URL=https://qbchjmgonvvskmnrqxdh.supabase.co
-SUPABASE_ANON_KEY=...
+SUPABASE_URL=
+SUPABASE_ANON_KEY=
 
 # Server
 PORT=3000

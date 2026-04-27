@@ -12,7 +12,7 @@ Ve a: https://supabase.com/dashboard
 
 ### 2. **Abre el SQL Editor**
 
-1. Selecciona tu proyecto: `qbchjmgonvvskmnrqxdh`
+1. Selecciona tu proyecto de Supabase
 2. En el menú lateral, haz clic en **SQL Editor**
 3. Crea una nueva consulta (New Query)
 
@@ -159,8 +159,8 @@ Token guardado en localStorage
 Tu configuración `.env` ya tiene las credenciales correctas:
 
 ```env
-SUPABASE_URL=https://qbchjmgonvvskmnrqxdh.supabase.co
-SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+SUPABASE_URL=
+SUPABASE_ANON_KEY=
 ```
 
 Solo falta ejecutar el script SQL para crear las tablas. 🎯

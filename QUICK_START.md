@@ -78,7 +78,7 @@ Abre http://localhost:5173
 **Si la tabla `users` NO existe:**
 
 1. Ve a https://supabase.com/dashboard
-2. Selecciona proyecto: `qbchjmgonvvskmnrqxdh`
+2. Selecciona tu proyecto de Supabase
 3. Abre **SQL Editor** → **New Query**
 4. Copia el contenido de `SUPABASE_USERS_SETUP.sql`
 5. Ejecuta el script
@@ -105,8 +105,8 @@ Abre http://localhost:5173
 **Variables `.env` necesarias:**
 ```env
 # Supabase (si usas)
-SUPABASE_URL=https://qbchjmgonvvskmnrqxdh.supabase.co
-SUPABASE_ANON_KEY=eyJhbGci...
+SUPABASE_URL=
+SUPABASE_ANON_KEY=
 
 # PostgreSQL local (si usas)
 DB_HOST=localhost
@@ -244,8 +244,8 @@ JWT_SECRET=tu_secret_muy_largo_y_seguro_aqui_min_32chars
 
 # Base de Datos
 NODE_ENV=development
-SUPABASE_URL=https://qbchjmgonvvskmnrqxdh.supabase.co
-SUPABASE_ANON_KEY=tu_anon_key_aqui
+SUPABASE_URL=
+SUPABASE_ANON_KEY=
 
 # PostgreSQL Fallback (si usas)
 DB_HOST=localhost

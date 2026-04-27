@@ -2,7 +2,7 @@
 import React, { useState } from "react";
 import "./FancyLogin.css";
 import { showInfo, showSuccess } from "./Toast";
-import { iniciarSesion, registrarUsuario, restablecerContrasena } from "../lib/api";
+import { guardarTokensAuth, iniciarSesion, registrarUsuario, restablecerContrasena } from "../lib/api";
 
 export default function FancyLogin({ onLogin }) {
   const [isSignup, setIsSignup] = useState(false);
@@ -83,7 +83,7 @@ export default function FancyLogin({ onLogin }) {
     try {
       const data = await iniciarSesion({ email: loginEmail, password: loginPassword });
 
-      localStorage.setItem('cafeteria_token', data.token);
+      guardarTokensAuth(data);
 
       onLogin && onLogin({
         role: data.user.role,
@@ -150,7 +150,7 @@ export default function FancyLogin({ onLogin }) {
         birthDate: signupBirthDate
       });
 
-      localStorage.setItem('cafeteria_token', data.token);
+      guardarTokensAuth(data);
 
       if (data.user.tokenPadre) {
         showSuccess('¡Cuenta creada exitosamente!');

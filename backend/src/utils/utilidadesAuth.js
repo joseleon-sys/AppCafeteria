@@ -1,5 +1,5 @@
 // Utilidades pequeñas reutilizadas por las rutas de autenticacion.
-import jwt from 'jsonwebtoken';
+import { crearAuthTokenService } from '../services/authTokenService.js';
 
 export function construirUsuarioPublico(user = {}, extraData = {}) {
   // Prepara una version segura del usuario para devolver al frontend.
@@ -18,18 +18,8 @@ export function construirUsuarioPublico(user = {}, extraData = {}) {
 }
 
 export function firmarTokenAuth(user, JWT_SECRET, profileId) {
-  // Genera el JWT que identifica al usuario en peticiones futuras.
-  return jwt.sign(
-    {
-      id: user.id,
-      email: user.email,
-      role: user.role,
-      isAdult: Boolean(user.is_adult),
-      profileId,
-    },
-    JWT_SECRET,
-    { expiresIn: '7d' },
-  );
+  // Compatibilidad con llamadas antiguas: ahora firma un access token corto.
+  return crearAuthTokenService({ jwtSecret: JWT_SECRET }).firmarAccessToken(user, profileId);
 }
 
 export async function registrarFalloValidacionAuth({

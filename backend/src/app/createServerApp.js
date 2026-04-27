@@ -2,12 +2,12 @@
 // crea el contexto compartido y registra todas las rutas y manejadores globales.
 import { crearContextoApp } from '../appContext.js';
 import { registerErrorHandler, registerNotFoundHandler, registerSystemRoutes } from '../routes/systemRoutes.js';
-import { registerAuthRoutes } from '../routes/authRoutes.js';
-import { registerOrderRoutes } from '../routes/orderRoutes.js';
-import { registerFamilyRoutes } from '../routes/familyRoutes.js';
-import { registerCatalogRoutes } from '../routes/catalogRoutes.js';
-import { registerAdminRoutes } from '../routes/adminRoutes.js';
-import { registerChildOrderRoutes } from '../routes/childOrderRoutes.js';
+import { registerAuthRoutes } from '../routes/auth.routes.js';
+import { registerOrderRoutes } from '../routes/order.routes.js';
+import { registerFamilyRoutes } from '../modules/family/family.routes.js';
+import { registerProductRoutes } from '../routes/product.routes.js';
+import { registerAdminRoutes } from '../modules/admin/admin.routes.js';
+import { registerChildOrderRoutes } from '../modules/childOrders/childOrders.routes.js';
 import { registerSentryErrorHandler } from '../observability/sentry.js';
 
 export function createServerApp() {
@@ -20,7 +20,7 @@ export function createServerApp() {
   registerAuthRoutes(app, context);
   registerOrderRoutes(app, context);
   registerFamilyRoutes(app, context);
-  registerCatalogRoutes(app, context);
+  registerProductRoutes(app, context);
   registerAdminRoutes(app, context);
   registerChildOrderRoutes(app, context);
   registerSentryErrorHandler(app);

@@ -1,27 +1,25 @@
 // Este archivo prepara el "contexto" comun del backend:
-// configuracion, cliente de base de datos, middlewares, helpers y utilidades compartidas.
-import express from 'express';
-import cors from 'cors';
-import dotenv from 'dotenv';
+// dependencias, helpers de dominio y utilidades compartidas.
 import jwt from 'jsonwebtoken';
 import { randomBytes } from 'crypto';
-import { createClient } from '@supabase/supabase-js';
-import path from 'path';
-import { fileURLToPath } from 'url';
-import Stripe from 'stripe';
+import { createRuntimeConfig, loadEnvironment } from './config/env.js';
+import { createSupabaseClient } from './config/supabase.js';
+import { createStripeConfig } from './config/stripe.js';
+import { createExpressApp } from './app/expressApp.js';
+import { createServerLifecycle } from './app/serverLifecycle.js';
 import {
   loginRateLimiter,
   registrationRateLimiter,
   linkingRateLimiter,
   resetLoginAttempts,
   getClientIP,
-} from './middleware/rateLimiter.js';
+} from './middlewares/rateLimiter.js';
 import {
   logSecurityEvent,
   calculateTrustScore,
   requireTrustScore,
   validateLinkingLimits,
-} from './middleware/fraudPrevention.js';
+} from './middlewares/fraudPrevention.js';
 import {
   registrarTokenDispositivo,
   desactivarTokenDispositivo,
@@ -29,130 +27,33 @@ import {
   marcarNotificacionComoLeida,
   enviarPushAUsuario,
 } from './services/notificationService.js';
-import { Sentry, captureServerResponse, initSentry, isSentryEnabled } from './observability/sentry.js';
-import { createHttpLogger } from './observability/httpLogger.js';
+import { Sentry, initSentry, isSentryEnabled } from './observability/sentry.js';
 import {
   utilidadesApp,
   construirNotasLineaPedido,
   tieneFormatoUuid,
   normalizarCodigoEspecial,
-  parsearValorBooleano,
   transformarProducto,
 } from './utils/utilidadesApp.js';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-dotenv.config({ path: path.join(__dirname, '../.env') });
-dotenv.config({ path: path.join(__dirname, '../../.env'), override: false });
-
-function esDespliegueAlojado() {
-  // Detecta si estamos corriendo en una plataforma alojada como Railway.
-  return Boolean(
-    process.env.RAILWAY_ENVIRONMENT ||
-    process.env.RAILWAY_ENVIRONMENT_NAME ||
-    process.env.RAILWAY_PROJECT_ID ||
-    process.env.RAILWAY_SERVICE_ID ||
-    process.env.RAILWAY_STATIC_URL,
-  );
-}
-
-function estaActivoSaltoPagoDesarrollo({
-  isProduction = process.env.NODE_ENV === 'production',
-  isHosted = esDespliegueAlojado(),
-} = {}) {
-  // El bypass de pago solo se permite en entornos locales de desarrollo.
-  if (isProduction || isHosted) {
-    return false;
-  }
-
-  return parsearValorBooleano(process.env.DEV_BYPASS_STRIPE_PAYMENT, false);
-}
-
-function isStripeSecretKey(key) {
-  return /^(sk|rk)_(test|live)_/.test(String(key || '').trim());
-}
+import { AppError } from './shared/errors/AppError.js';
 
 export function crearContextoApp() {
   // Inicializa observabilidad lo antes posible para capturar errores desde el arranque.
+  loadEnvironment();
   initSentry();
 
-  const app = express();
-  const PORT = process.env.PORT || 3000;
-  const isProduction = process.env.NODE_ENV === 'production';
-  const isHosted = esDespliegueAlojado();
-  const JWT_SECRET = process.env.JWT_SECRET || (!isProduction ? randomBytes(32).toString('hex') : null);
-
-  if (!process.env.JWT_SECRET) {
-    if (isProduction) throw new Error('JWT_SECRET es obligatorio en producción');
-    console.warn('JWT_SECRET no configurado. Se usa una clave temporal de desarrollo.');
-  }
-
-  const supabaseUrl = (process.env.SUPABASE_URL || '').trim();
-  const supabaseServerKey = (
-    process.env.SUPABASE_SERVICE_ROLE_KEY ||
-    process.env.SUPABASE_SECRET_KEY ||
-    process.env.SUPABASE_SERVICE_KEY ||
-    process.env.SUPABASE_ANON_KEY ||
-    ''
-  ).trim();
-
-  if (!supabaseUrl || !supabaseServerKey) {
-    throw new Error('SUPABASE_URL y SUPABASE_SECRET_KEY/SUPABASE_SERVICE_ROLE_KEY son obligatorios');
-  }
-
-  // Cliente principal de acceso a datos.
-  const supabase = createClient(supabaseUrl, supabaseServerKey);
-  const bypassRequestedInDisabledEnvironment = (isProduction || isHosted) && parsearValorBooleano(process.env.DEV_BYPASS_STRIPE_PAYMENT, false);
-  const developmentPaymentBypassEnabled = estaActivoSaltoPagoDesarrollo({ isProduction, isHosted });
-  const stripeSecretKey = (process.env.STRIPE_SECRET_KEY || '').trim();
-  const hasInvalidStripeSecretKey = Boolean(stripeSecretKey) && !isStripeSecretKey(stripeSecretKey);
-
-  if (bypassRequestedInDisabledEnvironment) {
-    console.warn('DEV_BYPASS_STRIPE_PAYMENT esta activo en produccion/Railway, pero se ignorara para no saltar Stripe.');
-  }
-
-  if (hasInvalidStripeSecretKey) {
-    const message = 'STRIPE_SECRET_KEY debe ser una clave de servidor de Stripe (sk_test_..., sk_live_..., rk_test_... o rk_live_...), no una clave publicable pk_...';
-    if ((isProduction || isHosted) && !developmentPaymentBypassEnabled) {
-      throw new Error(message);
-    }
-    console.warn(`${message}. Stripe quedara deshabilitado hasta definir una clave valida.`);
-  }
-
-  if (!stripeSecretKey) {
-    if ((isProduction || isHosted) && !developmentPaymentBypassEnabled) {
-      throw new Error('STRIPE_SECRET_KEY es obligatorio en produccion/Railway para no saltar la pasarela de pago');
-    }
-    console.warn('STRIPE_SECRET_KEY no configurado. Stripe quedara deshabilitado hasta definir la clave.');
-  }
-
-  const stripe = stripeSecretKey && !hasInvalidStripeSecretKey ? new Stripe(stripeSecretKey) : null;
-
-  console.log('Supabase configurado. Se usara como unico origen de datos.');
-
-  // Middleware globales basicos.
-  app.use(cors());
-  app.use(express.json());
-  app.use(createHttpLogger());
-  app.use((req, res, next) => {
-    // Cuando la respuesta termina, enviamos una copia resumida a Sentry si hubo error grave.
-    res.on('finish', () => captureServerResponse(req, res));
-    next();
-  });
-  app.use((req, res, next) => {
-    // Dejamos el cliente Supabase accesible desde la request por comodidad.
-    req.supabase = supabase;
-    next();
-  });
+  const { port: PORT, isProduction, isHosted, jwtSecret: JWT_SECRET } = createRuntimeConfig();
+  const supabase = createSupabaseClient();
+  const { stripe, developmentPaymentBypassEnabled } = createStripeConfig({ isProduction, isHosted });
+  const app = createExpressApp({ supabase, isHosted, isProduction });
 
   function autenticarToken(req, res, next) {
     // Middleware JWT: extrae el token, lo valida y guarda el usuario en req.user.
     const authHeader = req.headers.authorization;
     const token = authHeader && authHeader.split(' ')[1];
-    if (!token) return res.status(401).json({ error: 'Token no proporcionado' });
+    if (!token) return next(new AppError('Token no proporcionado', 401));
     jwt.verify(token, JWT_SECRET, (err, user) => {
-      if (err) return res.status(403).json({ error: 'Token inválido' });
+      if (err) return next(new AppError('Token inválido', 403));
       req.user = user;
       if (isSentryEnabled() && user?.id) {
         Sentry.setUser({ id: String(user.id), role: user.role });
@@ -170,7 +71,7 @@ export function crearContextoApp() {
   function requireAdmin(req, res, next) {
     // Limita una ruta solo a usuarios con rol admin.
     if (!req.user || req.user.role !== 'admin') {
-      return res.status(403).json({ error: 'Acceso denegado: solo administradores' });
+      return next(new AppError('Acceso denegado: solo administradores', 403));
     }
     next();
   }
@@ -391,20 +292,11 @@ export function crearContextoApp() {
     };
   }
 
-  async function iniciarServidor() {
-    app.listen(PORT, () => {
-      console.log(`Servidor corriendo en http://localhost:${PORT}`);
-
-      void (async () => {
-        try {
-          const productSummary = await obtenerResumenProductosActivos();
-          console.log(`Productos disponibles (${productSummary.source}): ${productSummary.count}`);
-        } catch (error) {
-          console.error('No se pudo obtener el resumen inicial de productos:', error);
-        }
-      })();
-    });
-  }
+  const iniciarServidor = createServerLifecycle({
+    app,
+    port: PORT,
+    obtenerResumenProductosActivos,
+  });
 
   return {
     app,

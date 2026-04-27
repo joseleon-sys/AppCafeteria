@@ -1,5 +1,6 @@
 // Hook que hidrata la sesion del usuario y mantiene su estado sincronizado.
 import { useEffect, useState } from 'react';
+import { cerrarSesion } from '../lib/api';
 import { inicializarNotificacionesPush } from '../lib/pushNotifications';
 import { limpiarSesion, cargarUsuarioSesion, guardarUsuario } from '../lib/sesion';
 
@@ -47,7 +48,12 @@ export function useCargaSesion() {
     });
   }, [user]);
 
-  function logout() {
+  async function logout() {
+    try {
+      await cerrarSesion();
+    } catch (error) {
+      console.error('Error cerrando sesión:', error);
+    }
     limpiarSesion();
     setUser(null);
   }
