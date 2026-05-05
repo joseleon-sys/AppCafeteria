@@ -1,23 +1,21 @@
 # AppCafeteria
 
-Aplicacion de cafeteria escolar con frontend React/Vite/Capacitor y backend Node.js/Express. Permite gestionar catalogo de productos, carrito, pedidos, pagos con Stripe, autenticacion, perfiles adulto/menor, vinculacion padre-hijo, aprobacion de pedidos infantiles, notificaciones y panel de administracion.
+Aplicacion de cafeteria escolar con frontend React/Vite/Capacitor y backend Node.js/Express. Permite gestionar catalogo de productos, carrito, pedidos, autenticacion, perfiles adulto/menor, vinculacion padre-hijo, aprobacion de pedidos infantiles y panel de administracion.
 
 ## Tecnologias usadas
 
 - Frontend: React 18, Vite, Ionic React, Capacitor.
-- Backend: Node.js, Express, Supabase/PostgreSQL.
+- Backend: Node.js, Express, Supabase.
 - Autenticacion y seguridad: JWT, bcryptjs, helmet, CORS, express-rate-limit.
-- Pagos y notificaciones: Stripe, Firebase Admin.
-- Observabilidad: Sentry, pino-http, Logstash opcional.
+- Persistencia y datos: Supabase como unico servicio externo vigente.
+- Observabilidad local: pino-http.
 - Validacion: Zod.
 
 ## Requisitos previos
 
 - Node.js 18 o superior.
 - npm.
-- Proyecto Supabase configurado, o PostgreSQL local si se trabaja con fallback/documentacion legacy.
-- Cuenta/clave de Stripe para flujos de pago reales.
-- Opcional: Firebase para notificaciones push.
+- Proyecto Supabase configurado.
 
 ## Instalacion
 
@@ -105,10 +103,6 @@ FRONTEND_URL=http://localhost:5173
 SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=replace-me
 JWT_SECRET=replace-me-with-a-long-random-secret
-STRIPE_SECRET_KEY=sk_test_replace_me
-DEV_BYPASS_STRIPE_PAYMENT=
-FIREBASE_SERVICE_ACCOUNT_JSON=
-SENTRY_DSN=
 ```
 
 Variables principales del frontend:
@@ -119,7 +113,6 @@ VITE_API_FALLBACK_URL=
 VITE_RAILWAY_API_URL=
 BACKEND_URL=
 VITE_APP_VERSION=
-VITE_SENTRY_DSN=
 ```
 
 Notas:
@@ -226,9 +219,6 @@ Tambien puedes registrar usuarios desde `POST /api/auth/register` para probar fl
 - Mantén `.env.example` solo con placeholders.
 - Rota cualquier clave que haya sido expuesta accidentalmente.
 - Usa un `JWT_SECRET` largo, aleatorio y distinto por entorno.
-- No uses `DEV_BYPASS_STRIPE_PAYMENT` en produccion ni en hosting publico.
-- Usa claves de servidor de Stripe (`sk_...` o `rk_...`) solo en backend; nunca expongas claves secretas en frontend.
 - Configura `FRONTEND_URL` en produccion para evitar CORS abierto.
 - No confies en roles enviados por el frontend; el backend debe validar JWT y estado real del usuario.
-- Revisa los diffs antes de commitear cambios en configuracion, pagos, autenticacion o logs.
-
+- Revisa los diffs antes de commitear cambios en configuracion, autenticacion o logs.

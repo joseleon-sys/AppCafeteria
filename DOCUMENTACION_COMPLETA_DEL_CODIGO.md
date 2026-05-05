@@ -10,11 +10,11 @@ El proyecto es una aplicación full-stack con una arquitectura Cliente-Servidor 
 
 - **Frontend:** React + Vite + Ionic (para PWA y compilación móvil nativa mediante Capacitor).
 - **Backend:** Node.js + Express.js.
-- **Base de Datos:** PostgreSQL (con soporte para Supabase).
-- **Servicios Externos:** Firebase Admin (Notificaciones Push), Stripe (Pasarela de pagos), Sentry (Monitorización y reporte de errores).
+- **Base de Datos y Backend as a Service:** Supabase (PostgreSQL gestionado).
+- **Servicios Externos:** Supabase es el unico servicio externo vigente documentado para persistencia, autenticacion de datos de aplicacion y consultas del backend.
 
 El flujo de información es estrictamente unidireccional para las peticiones HTTP: 
-`Componentes UI (React) -> lib/api.js (Capa de servicio Frontend) -> Rutas Backend (Express) -> Controladores/BD`.
+`Componentes UI (React) -> api/lib del Frontend -> Rutas Backend (Express) -> Controladores/Servicios -> Repositorios Supabase`.
 
 ---
 
@@ -39,7 +39,7 @@ El backend se apoya en un esquema relacional. Las entidades principales son:
 
 ### `orders` y `order_items` (Compras Adultos)
 - **id**, **user_id**, **total**, **status** (`pending`, `paid`, `cancelled`).
-- **stripe_session_id**: Referencia al cobro externo.
+- **payment_method / payment_status**: Datos del metodo y estado de pago registrados en Supabase.
 - `order_items` guarda una foto inmutable de qué se compró y sus opciones.
 
 ### `child_orders` y `parent_child_links` (Compras Menores)
@@ -53,7 +53,7 @@ El backend se apoya en un esquema relacional. Las entidades principales son:
 El frontend (en `frontend/src`) no usa un enrutador clásico multiruta, sino que controla la interfaz basándose en estados desde `AppMovil.jsx`.
 
 ### 3.1. Orquestación (`AppMovil.jsx` y `main.jsx`)
-- **`main.jsx`**: Arranca React, inyecta Sentry para errores globales e inicializa `CartProvider`.
+- **`main.jsx`**: Arranca React e inicializa `CartProvider`.
 - **`AppMovil.jsx`**: Hookea la sesión (`useCargaSesion`).
   - Si el rol es `admin`: Monta `<AdminDashboard />`.
   - Si no hay usuario: Monta `<FancyLogin />`.
@@ -69,17 +69,17 @@ El frontend (en `frontend/src`) no usa un enrutador clásico multiruta, sino que
 - **Modales Globales**: En lugar de páginas, la app "flota" vistas:
   - `<CartModal />`: Muestra el carrito.
   - `<ProfileModal />`: Permite cambiar el alias o ver la familia.
-  - `<CheckoutModal />`: Muestra el resumen antes de ir a Stripe.
+  - `<CheckoutModal />`: Muestra el resumen antes de confirmar el pedido.
 - **Familia**: `<LinkParentModal />` (El menor introduce el código del padre) y `<LinkRequestsList />` (El padre aprueba la solicitud).
 
 ---
 
 ## 4. Backend: API y Lógica de Negocio
 
-El código de `backend/src` sigue un patrón Middleware -> Route -> Controller -> DB.
+El código de `backend/src` sigue un patrón Middleware -> Route -> Controller -> Service -> Repository -> Supabase.
 
 ### 4.1. Core y Seguridad (`appContext.js` y Middlewares)
-- **`appContext.js`**: Inicializa las variables de entorno, la conexión a BD y carga utilidades. Expone `authenticateToken` (valida JWT) y `requireAdmin`.
+- **`appContext.js`**: Inicializa las variables de entorno, el cliente Supabase y utilidades compartidas. Expone `authenticateToken` (valida JWT) y `requireAdmin`.
 - **`rateLimiter.js`**: Protege contra ataques DDOS o Brute Force en `/api/auth/login`.
 - **`fraudPrevention.js`**: Mide un `trust_score` en tiempo real. Si detecta acciones raras (muchos logins fallidos), puede bloquear al usuario de hacer compras grandes.
 
@@ -91,17 +91,17 @@ El código de `backend/src` sigue un patrón Middleware -> Route -> Controller -
 - `GET /me`: El frontend lo usa para rehidratar la sesión y comprobar si el token sigue vivo.
 
 #### B. Catálogo (`catalogRoutes.js`)
-- `GET /menu`: Endpoint ultra-resiliente. Si Postgres está caído, busca en Supabase, si Supabase falla, carga un `fallbackMenu` (Mock) en memoria para que el frontend nunca colapse.
+- `GET /menu`: Consulta el catalogo vigente desde Supabase.
 - Resto de verbos (POST, PUT, DELETE) protegidos por `requireAdmin`.
 
-#### C. Pagos Adultos (`orderRoutes.js`)
-- `POST /orders`: Inserta en base de datos el pedido como `pending`.
-- `POST /stripe/create-checkout-session`: Construye el objeto de pago y devuelve una URL de Stripe al frontend para completar el pago.
+#### C. Pedidos Adultos (`orderRoutes.js`)
+- `POST /orders`: Valida el carrito y registra el pedido en Supabase.
+- `GET /orders/my` y `GET /orders/:id`: Consultan historial y detalle de pedidos desde Supabase.
 
 #### D. Sistema Padre-Hijo (`familyRoutes.js` y `childOrderRoutes.js`)
 - **Padre:** `GET /parent/token` le da al adulto un código (ej: `X7A-9P2`).
 - **Hijo:** `POST /child/link-parent` el niño envía el código.
-- **Aprobaciones:** Cuando el hijo crea un pedido, cae en `/child/orders`. El backend manda una **Notificación Push** (mediante `services/notificationService.js` + Firebase) al padre, quien desde su vista lanza `POST /child/orders/:id/approve`.
+- **Aprobaciones:** Cuando el hijo crea un pedido, cae en `/child/orders`. El padre lo revisa desde su vista y lanza `POST /child/orders/:id/approve`; el estado queda persistido en Supabase.
 
 #### E. Administración (`adminRoutes.js`)
 - Endpoints analíticos (`/stats`, `/users`, `/fraud`) usados por `<AdminDashboard />` en el frontend para gestionar la cafetería.
@@ -110,20 +110,19 @@ El código de `backend/src` sigue un patrón Middleware -> Route -> Controller -
 
 ## 5. Variables de Entorno (.env)
 
-El sistema requiere configuraciones críticas para enlazar los servicios:
+El sistema requiere configuraciones críticas para enlazar Supabase y proteger la API:
 - **`JWT_SECRET`**: Seguridad para encriptar los tokens.
-- **`DATABASE_URL`**: Conexión a la instancia de PostgreSQL.
-- **`STRIPE_SECRET_KEY`**: Integración de pagos.
-- **`FIREBASE_SERVICE_ACCOUNT`**: Para el envío de Push Notifications.
+- **`SUPABASE_URL`**: URL del proyecto Supabase.
+- **`SUPABASE_SERVICE_ROLE_KEY`** o **`SUPABASE_SECRET_KEY`**: Clave de servidor para que el backend consulte y escriba datos.
 - *(En el frontend)* **`VITE_API_URL`**: Hacia dónde apuntan las llamadas de `api.js`.
 
 ---
 
 ## 6. Monitoreo y Observabilidad
 
-El proyecto tiene un enfoque maduro hacia los errores de producción:
-- **Sentry**: Integrado en frontend (`sentry.js`) y backend (`observability/sentry.js`) para rastrear excepciones y medir rendimiento de las llamadas.
-- **Pino HTTP**: El backend usa este logger (`httpLogger.js`) para emitir logs estructurados en JSON, preparados para ser ingeridos por un stack ELK o similar, ocultando información sensible (como passwords y tokens).
+El proyecto registra actividad del backend con logs estructurados:
+- **Pino HTTP**: El backend usa este logger (`httpLogger.js`) para emitir logs JSON y ocultar informacion sensible como passwords y tokens.
+- Cualquier integracion externa historica debe considerarse legacy hasta que se reactive de forma explicita y se actualicen codigo, variables y documentacion.
 
 ---
 *Esta documentación ha sido generada tras un escaneo profundo de la versión actual del repositorio.*

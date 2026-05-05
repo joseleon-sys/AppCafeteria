@@ -12,14 +12,14 @@ La persistencia del backend usa Supabase siempre.
 
 ## Dependencias
 
-- Producción: `@supabase/supabase-js`, `bcryptjs`, `cors`, `dotenv`, `express`, `express-rate-limit`, `firebase-admin`, `helmet`, `jsonwebtoken`, `stripe`, `@sentry/node`, `pino-http`
+- Producción: `@supabase/supabase-js`, `bcryptjs`, `cors`, `dotenv`, `express`, `express-rate-limit`, `helmet`, `jsonwebtoken`, `pino-http`, `zod`
 - Desarrollo: `nodemon`
 
 ## Variables de entorno mínimas
 
 ```env
 SUPABASE_URL=https://tu-proyecto.supabase.co
-SUPABASE_SECRET_KEY=tu-service-role-o-secret-key
+SUPABASE_SERVICE_ROLE_KEY=tu-service-role-key
 JWT_SECRET=tu-clave-jwt
 PORT=3000
 FRONTEND_URL=http://localhost:5173
@@ -38,21 +38,13 @@ Si `FRONTEND_URL` esta vacio en desarrollo, el backend permite los origenes loca
 habituales de Vite/Capacitor para no romper el trabajo local. En produccion debe
 estar configurado con el dominio real del frontend.
 
-Opcionales:
+Opcionales documentadas:
 
 ```env
-STRIPE_SECRET_KEY=sk_test_...
-DEV_BYPASS_STRIPE_PAYMENT=true
-
-SENTRY_DSN=https://...
-SENTRY_ENVIRONMENT=development
-SENTRY_RELEASE=cafeteria-backend@1.0.0
-SENTRY_TRACES_SAMPLE_RATE=0.1
-SENTRY_ENABLED=true
-
 LOG_LEVEL=info
-LOGSTASH_TCP_URL=localhost:5000
 ```
+
+Supabase es el unico servicio externo vigente para el backend. Si aparecen variables o archivos historicos de otras integraciones, se consideran legacy hasta que se reactiven de forma explicita.
 
 ## Instalación
 
@@ -84,9 +76,9 @@ El backend arranca en `http://localhost:3000` por defecto.
 
 - Los pedidos estándar se persisten en Supabase en `pedidos` y `lineas_pedido`.
 - El historial y el detalle consultan siempre Supabase.
-- Si `DEV_BYPASS_STRIPE_PAYMENT=true`, en desarrollo se omite Stripe, pero el pedido igualmente se guarda en Supabase.
+- Los pedidos se guardan en Supabase; el estado y metodo de pago quedan registrados en las tablas del dominio.
 
 ## Notas
 
-- Si `SUPABASE_URL` o `SUPABASE_SECRET_KEY` faltan, el backend no arranca.
+- Si `SUPABASE_URL` o `SUPABASE_SERVICE_ROLE_KEY`/`SUPABASE_SECRET_KEY` faltan, el backend no arranca.
 - Usuarios, catálogo y pedidos dependen de Supabase.

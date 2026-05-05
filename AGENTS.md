@@ -2,7 +2,7 @@
 
 ## Descripcion Del Proyecto
 
-AppCafeteria es una aplicacion de cafeteria con frontend React/Vite/Capacitor y backend Node.js/Express. El sistema gestiona catalogo de productos, carrito, pedidos, pagos con Stripe, autenticacion, perfiles adulto/menor, vinculacion padre-hijo, aprobacion de pedidos infantiles, notificaciones y panel de administracion.
+AppCafeteria es una aplicacion de cafeteria con frontend React/Vite/Capacitor y backend Node.js/Express. El sistema gestiona catalogo de productos, carrito, pedidos, autenticacion, perfiles adulto/menor, vinculacion padre-hijo, aprobacion de pedidos infantiles y panel de administracion. Supabase es el unico servicio externo vigente documentado.
 
 El objetivo de cualquier cambio es mejorar el codigo manteniendo la funcionalidad actual. No se debe mezclar logica nueva con refactors grandes sin una razon clara y verificable.
 
@@ -41,7 +41,7 @@ La raiz queda para documentacion, configuracion de Docker, guias y archivos comu
 - `routes`: solo definen endpoints, middlewares aplicables y delegan en controllers.
 - `controllers`: traducen `req`/`res` hacia casos de uso; no deben contener consultas largas ni reglas de negocio complejas.
 - `services`: contienen reglas de negocio, orquestacion y decisiones del dominio.
-- `repositories`: encapsulan acceso a Supabase u otras fuentes de datos.
+- `repositories`: encapsulan acceso a Supabase.
 - `validators`: validan y normalizan entradas antes de ejecutar logica de negocio.
 - `middleware`: autenticacion, autorizacion, rate limiting, CORS, logs, errores y seguridad transversal.
 - `utils`: funciones puras y pequenas, sin dependencia directa de Express ni Supabase salvo que sea inevitable.
@@ -146,7 +146,7 @@ npm run build
 
 - Usar `.env` local para valores reales.
 - Usar `.env.example` solo con nombres descriptivos o placeholders.
-- No commitear claves de Supabase, Stripe, Firebase, JWT, Sentry ni servicios externos.
+- No commitear claves de Supabase, JWT ni otros secretos.
 - Revisar diffs antes de subir cambios que toquen configuracion.
 - Si una clave real aparece en git, asumir que esta comprometida y rotarla.
 
@@ -156,7 +156,6 @@ Ejemplo correcto:
 SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=replace-me
 JWT_SECRET=replace-me
-STRIPE_SECRET_KEY=sk_test_replace_me
 ```
 
 ## Criterio De Finalizacion
