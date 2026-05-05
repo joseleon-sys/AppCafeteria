@@ -1,6 +1,4 @@
 // Inicializacion de Sentry en el frontend para errores y trazas del navegador.
-import * as Sentry from '@sentry/react';
-
 function parseSampleRate(value, fallback) {
   // Asegura que los porcentajes de muestreo esten dentro del rango valido.
   const parsed = Number.parseFloat(value);
@@ -29,7 +27,7 @@ const dsn = (import.meta.env.VITE_SENTRY_DSN || '').trim();
 const enabled = Boolean(dsn) && import.meta.env.VITE_SENTRY_ENABLED !== 'false';
 
 if (enabled) {
-  Sentry.init({
+  import('@sentry/react').then((Sentry) => Sentry.init({
     dsn,
     environment: import.meta.env.VITE_SENTRY_ENVIRONMENT || import.meta.env.MODE || 'development',
     release: import.meta.env.VITE_SENTRY_RELEASE || import.meta.env.VITE_APP_VERSION,
@@ -45,7 +43,5 @@ if (enabled) {
         blockAllMedia: true,
       }),
     ],
-  });
+  }));
 }
-
-export { Sentry };

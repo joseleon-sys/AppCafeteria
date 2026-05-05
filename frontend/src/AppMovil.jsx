@@ -1,19 +1,24 @@
 // Componente raiz de la interfaz: decide que pantalla o modal debe verse.
-import React from "react";
+import React, { Suspense, lazy } from "react";
 import HamsterSpinner from "./components/HamsterSpinner";
 import Overlay from "./components/Overlay";
 import Toast from "./components/Toast";
-import FancyLogin from "./components/FancyLogin";
-import MainScreen from "./components/MainScreen";
-import AdminDashboard from "./pages/AdminDashboard";
-import CartModal from "./components/CartModal";
-import HistoryModal from "./components/HistoryModal";
-import ProfileModal from "./components/ProfileModal";
-import LinkParentModal from "./components/LinkParentModal";
 import Dialog from "./components/Dialog";
-import PagoExitoso from "./pages/PagoExitoso";
 import { useCargaSesion } from "./hooks/useCargaSesion";
 import { useEstadoVistaApp } from "./hooks/useEstadoVistaApp";
+
+const AdminDashboard = lazy(() => import("./pages/AdminDashboard"));
+const CartModal = lazy(() => import("./components/CartModal"));
+const FancyLogin = lazy(() => import("./components/FancyLogin"));
+const HistoryModal = lazy(() => import("./components/HistoryModal"));
+const LinkParentModal = lazy(() => import("./components/LinkParentModal"));
+const MainScreen = lazy(() => import("./components/MainScreen"));
+const PagoExitoso = lazy(() => import("./pages/PagoExitoso"));
+const ProfileModal = lazy(() => import("./components/ProfileModal"));
+
+function LazyBoundary({ children, fallback = null }) {
+  return <Suspense fallback={fallback}>{children}</Suspense>;
+}
 
 export default function AppMovil() {
   // Hook de sesion: sabe quien es el usuario y como cerrar sesion.
@@ -55,25 +60,33 @@ export default function AppMovil() {
 
       {esPaginaExito ? (
         // Tras un pago correcto se muestra una pantalla especifica.
-        <PagoExitoso />
+        <LazyBoundary>
+          <PagoExitoso />
+        </LazyBoundary>
       ) : !haIniciadoSesion ? (
         // Si no hay usuario, la app muestra el login.
-        <FancyLogin onLogin={setUser} />
+        <LazyBoundary>
+          <FancyLogin onLogin={setUser} />
+        </LazyBoundary>
       ) : esAdmin ? (
         // Los administradores van a su panel propio.
-        <AdminDashboard onLogout={logout} />
+        <LazyBoundary fallback={<div className="loading">Cargando panel...</div>}>
+          <AdminDashboard onLogout={logout} />
+        </LazyBoundary>
       ) : (
         <>
           {/* Flujo normal del usuario cliente o hijo. */}
-          <MainScreen
-            user={user}
-            onLogout={logout}
-            onShowSpinner={mostrarSpinnerCarga}
-            onShowCart={abrirCarrito}
-            onShowHistory={abrirHistorial}
-            onShowProfile={abrirPerfil}
-            onShowLinkParent={abrirVinculoPadre}
-          />
+          <LazyBoundary>
+            <MainScreen
+              user={user}
+              onLogout={logout}
+              onShowSpinner={mostrarSpinnerCarga}
+              onShowCart={abrirCarrito}
+              onShowHistory={abrirHistorial}
+              onShowProfile={abrirPerfil}
+              onShowLinkParent={abrirVinculoPadre}
+            />
+          </LazyBoundary>
           {mostrarSpinner && (
             <div className="loading-modal-overlay">
               <div className="loading-modal">
@@ -82,28 +95,44 @@ export default function AppMovil() {
             </div>
           )}
           {/* Modales secundarios controlados por el hook de estado visual. */}
-          <CartModal 
-            isOpen={mostrarCarrito} 
-            onClose={cerrarCarrito} 
-            user={user}
-          />
-          <HistoryModal 
-            isOpen={mostrarHistorial} 
-            onClose={cerrarHistorial}
-            user={user}
-            initialOrderId={idPedidoHistorial}
-          />
-          <ProfileModal 
-            isOpen={mostrarPerfil} 
-            onClose={cerrarPerfil}
-            user={user}
-            onUserUpdate={actualizarUsuario}
-            onLogout={logout}
-          />
-          <LinkParentModal 
-            isOpen={mostrarVinculoPadre} 
-            onClose={cerrarVinculoPadre} 
-          />
+          {mostrarCarrito && (
+            <LazyBoundary>
+              <CartModal
+                isOpen={mostrarCarrito}
+                onClose={cerrarCarrito}
+                user={user}
+              />
+            </LazyBoundary>
+          )}
+          {mostrarHistorial && (
+            <LazyBoundary>
+              <HistoryModal
+                isOpen={mostrarHistorial}
+                onClose={cerrarHistorial}
+                user={user}
+                initialOrderId={idPedidoHistorial}
+              />
+            </LazyBoundary>
+          )}
+          {mostrarPerfil && (
+            <LazyBoundary>
+              <ProfileModal
+                isOpen={mostrarPerfil}
+                onClose={cerrarPerfil}
+                user={user}
+                onUserUpdate={actualizarUsuario}
+                onLogout={logout}
+              />
+            </LazyBoundary>
+          )}
+          {mostrarVinculoPadre && (
+            <LazyBoundary>
+              <LinkParentModal
+                isOpen={mostrarVinculoPadre}
+                onClose={cerrarVinculoPadre}
+              />
+            </LazyBoundary>
+          )}
         </>
       )}
     </>
