@@ -70,6 +70,7 @@ export function crearOrderService(deps, repository) {
     supabase,
     stripe,
     developmentPaymentBypassEnabled,
+    ticketPrinterService,
     validarItemsPedido,
     parsearEnteroPositivo,
     construirAliasEstadoPedido,
@@ -121,6 +122,13 @@ export function crearOrderService(deps, repository) {
     const itemsToInsert = mapLineasPedidoParaInsert(order.id, validatedOrder.items);
     const { error: itemsError } = await repository.insertarLineasPedido(itemsToInsert);
     if (itemsError) throw itemsError;
+
+    await ticketPrinterService?.imprimirTicketPedidoSinFallo({
+      orderId: order.id,
+      title: 'Pedido pagado',
+      items: validatedOrder.items,
+      total: validatedOrder.total,
+    });
 
     return {
       ...order,

@@ -35,6 +35,7 @@ import {
   marcarNotificacionComoLeida,
   enviarPushAUsuario,
 } from './services/notificationService.js';
+import { crearTicketPrinterService } from './services/ticketPrinterService.js';
 import { initSentry, isSentryEnabled } from './observability/sentry.js';
 import {
   utilidadesApp,
@@ -52,6 +53,7 @@ export function crearContextoApp() {
   const { port: PORT, isProduction, isHosted, jwtSecret: JWT_SECRET } = createRuntimeConfig();
   const supabase = createSupabaseClient();
   const { stripe, developmentPaymentBypassEnabled } = createStripeConfig({ isProduction, isHosted });
+  const ticketPrinterService = crearTicketPrinterService();
   const app = createExpressApp({ supabase, isHosted, isProduction });
 
   const requireAuth = createRequireAuth({ jwtSecret: JWT_SECRET });
@@ -286,6 +288,7 @@ export function crearContextoApp() {
     supabase,
     stripe,
     developmentPaymentBypassEnabled,
+    ticketPrinterService,
     USER_ROLES,
     requireAuth,
     autenticarToken,

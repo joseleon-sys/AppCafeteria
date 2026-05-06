@@ -54,6 +54,7 @@ export function crearChildOrdersService(deps, repository) {
     supabase,
     puedeActuarComoPadre,
     notificarUsuarioSinFallo,
+    ticketPrinterService,
     validarItemsPedido: validarProductosPedido,
     parsearEnteroPositivo,
     construirAliasEstadoPedido,
@@ -332,6 +333,16 @@ export function crearChildOrdersService(deps, repository) {
       });
 
       if (error) throw error;
+
+      const { data: items, error: itemsError } = await repository.listarItemsPedidoInfantil(idValidation.id);
+      if (itemsError) throw itemsError;
+
+      await ticketPrinterService?.imprimirTicketPedidoSinFallo({
+        orderId: updated.id,
+        title: 'Pedido infantil pagado',
+        items: items || [],
+        total: finalAmount,
+      });
 
       await notificarUsuarioSinFallo(order.child_id, {
         type: 'child_order_paid',
