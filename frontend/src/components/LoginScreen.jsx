@@ -28,9 +28,9 @@ export default function LoginScreen({ onLogin }) {
     <main id="login-screen" className="screen" role="main">
       <div className="card login-card">
         <div style={{ textAlign: 'center', marginBottom: '16px' }}>
-          <img src="/imagenesEjemplo/logoOscuro.png" alt="CafeteriaApp Logo" style={{ width: '160px', height: 'auto' }} />
+          <img src="/imagenesEjemplo/logoOscuro.png" alt="Aula Café Logo" style={{ width: '160px', height: 'auto' }} />
         </div>
-        <h1>CafeteriaApp</h1>
+        <h1>Aula Café</h1>
         <p className="subtitle">Bienvenido — inicia sesión con tu cuenta real</p>
         <form id="login-form" aria-label="Formulario de inicio de sesión" onSubmit={gestionarEnvio}>
           <label htmlFor="login-email" className="sr-only">Correo electrónico</label>

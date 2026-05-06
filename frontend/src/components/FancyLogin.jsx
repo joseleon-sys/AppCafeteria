@@ -13,8 +13,8 @@ export default function FancyLogin({ onLogin }) {
   return (
     <div className="container">
       <div className="login-header">
-        <img src="/imagenesEjemplo/logoOscuroLinea.png" alt="CafeteriaApp Logo" className="login-logo" />
-        <h1 className="login-app-name">CafeteriaApp</h1>
+        <img src="/imagenesEjemplo/logoOscuroLinea.png" alt="Aula Café Logo" className="login-logo" />
+        <h1 className="login-app-name">Aula Café</h1>
       </div>
       <div className="wrapper" style={{ position: 'relative', zIndex: 1 }}>
         <div className="card-switch">
