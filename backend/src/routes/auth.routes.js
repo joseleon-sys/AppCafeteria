@@ -2,7 +2,7 @@ import { crearAuthController } from './auth.controller.js';
 import { crearAuthRepository } from './auth.repository.js';
 import { crearAuthService } from './auth.service.js';
 import { validateRequest } from '../middlewares/validateRequest.js';
-import { loginSchema, logoutSchema, refreshTokenSchema, registerSchema } from './auth.validators.js';
+import { loginSchema, logoutSchema, refreshTokenSchema, registerSchema, resetPasswordSchema } from './auth.validators.js';
 
 export function registerAuthRoutes(app, deps) {
   const {
@@ -19,7 +19,7 @@ export function registerAuthRoutes(app, deps) {
   app.post('/api/auth/login', loginRateLimiter, validateRequest(loginSchema), controller.loginUsuario);
   app.post('/api/auth/refresh', validateRequest(refreshTokenSchema), controller.refrescarSesion);
   app.post('/api/auth/logout', validateRequest(logoutSchema), controller.cerrarSesion);
-  app.post('/api/auth/reset-password', controller.restablecerContrasena);
+  app.post('/api/auth/reset-password', validateRequest(resetPasswordSchema), controller.restablecerContrasena);
   app.get('/api/auth/me', requireAuth, controller.obtenerUsuarioActual);
 
   app.post('/api/notifications/devices', requireAuth, controller.registrarDispositivo);

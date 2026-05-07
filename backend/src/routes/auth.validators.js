@@ -18,7 +18,7 @@ export const registerSchema = {
 
 export const loginSchema = {
   body: z.object({
-    email: z.string().trim().email('Email invalido'),
+    email: nonEmptyString,
     password: nonEmptyString,
   }).passthrough(),
 };
@@ -33,6 +33,14 @@ export const logoutSchema = {
   body: z.object({
     refreshToken: z.string().trim().optional(),
   }).passthrough().optional(),
+};
+
+export const resetPasswordSchema = {
+  body: z.object({
+    email: nonEmptyString,
+    birthDate: birthDateSchema,
+    newPassword: z.string().min(6, 'La contrasena debe tener al menos 6 caracteres'),
+  }).passthrough(),
 };
 
 export function validarRegistroUsuario({ email, password, formattedName, birthDate, esNombreCompletoValido }) {

@@ -20,6 +20,48 @@ function esFechaNacimientoValida(value) {
   return !Number.isNaN(date.getTime());
 }
 
+function esTablaRefreshPendiente(error) {
+  const message = String(error?.message || '').toLowerCase();
+  return error?.code === '42P01' || message.includes('auth_refresh_tokens');
+}
+
+async function buscarUsuarioAuthPorEmail(supabase, email) {
+  if (!supabase?.auth?.admin?.listUsers) return null;
+
+  const perPage = 200;
+  for (let page = 1; page <= 25; page += 1) {
+    const { data, error } = await supabase.auth.admin.listUsers({ page, perPage });
+    if (error) throw error;
+
+    const users = Array.isArray(data?.users) ? data.users : [];
+    const match = users.find((authUser) => normalizarEmail(authUser?.email) === email);
+    if (match) return match;
+    if (users.length < perPage) break;
+  }
+
+  return null;
+}
+
+async function actualizarPasswordAuthSupabase(supabase, email, newPassword) {
+  const authUser = await buscarUsuarioAuthPorEmail(supabase, email);
+  if (!authUser?.id) return;
+
+  const { error } = await supabase.auth.admin.updateUserById(authUser.id, {
+    password: newPassword,
+  });
+  if (error) throw error;
+}
+
+async function revocarRefreshTokensUsuario(supabase, userId) {
+  const { error } = await supabase
+    .from('auth_refresh_tokens')
+    .update({ revoked_at: new Date().toISOString() })
+    .eq('user_id', userId)
+    .is('revoked_at', null);
+
+  if (error && !esTablaRefreshPendiente(error)) throw error;
+}
+
 export async function restablecerContrasenaUsuario({
   email,
   birthDate,
@@ -73,6 +115,9 @@ export async function restablecerContrasenaUsuario({
     .eq('id', user.id);
 
   if (errorActualizacion) throw errorActualizacion;
+
+  await actualizarPasswordAuthSupabase(supabase, normalizedEmail, newPassword);
+  await revocarRefreshTokensUsuario(supabase, user.id);
 
   // Devolvemos lo minimo necesario para confirmar que el cambio se hizo.
   return {
