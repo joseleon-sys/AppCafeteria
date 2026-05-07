@@ -123,7 +123,7 @@ export default function MainScreen({ user, onLogout, onShowSpinner, onShowCart, 
               <line x1="10" y1="1" x2="10" y2="4"></line>
               <line x1="14" y1="1" x2="14" y2="4"></line>
             </svg>
-            CafeteriaApp
+            Aula Café
           </span>
         </div>
         <div className="header-filter" ref={allergenFilterRef}>

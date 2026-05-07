@@ -50,6 +50,6 @@ export async function obtenerMisFavoritos() {
 export async function actualizarMisFavoritos(idsFavoritos) {
   return peticionApi('/api/auth/favorites', {
     method: 'PUT',
-    body: JSON.stringify({ favoriteIds: idsFavoritos }),
+    body: JSON.stringify({ favoriteIds: idsFavoritos, idsFavoritos }),
   }, { auth: true, contentType: true });
 }

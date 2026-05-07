@@ -34,7 +34,7 @@ export function crearAuthProfileFlows({ deps, repository }) {
     async actualizarFavoritos(body, authUser) {
       requireSupabase(supabase);
 
-      const idsFavoritos = normalizarIdsFavoritos(body?.idsFavoritos);
+      const idsFavoritos = normalizarIdsFavoritos(body?.favoriteIds ?? body?.idsFavoritos ?? body?.favorites);
       const { data, error } = await repository.actualizarFavoritos(authUser.id, idsFavoritos);
 
       if (error) {
