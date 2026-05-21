@@ -1,8 +1,11 @@
 import {
   validarBloqueoUsuario,
   validarCambiosUsuario,
+  validarConfiguracionImpresora,
   validarIdUsuario,
 } from './admin.validators.js';
+
+const PRINTER_SETTINGS_KEY = 'ticket_printer';
 
 class AdminServiceError extends Error {
   constructor(statusCode, message, options = {}) {
@@ -30,6 +33,7 @@ export function crearAdminService(deps, repository) {
     supabase,
     construirEntradaColaPedidos,
     parsearArrayJson,
+    ticketPrinterService,
   } = deps;
 
   function requireSupabase() {
@@ -224,6 +228,43 @@ export function crearAdminService(deps, repository) {
       if (error) throw error;
 
       return { orders: (orders || []).map(mapearEntradaColaPedido) };
+    },
+
+    async obtenerConfiguracionImpresora() {
+      const fallbackConfig = await ticketPrinterService?.cargarConfiguracionPersistida?.();
+
+      if (!supabase) {
+        return { config: fallbackConfig };
+      }
+
+      const { data, error } = await repository.obtenerAjuste(PRINTER_SETTINGS_KEY);
+      if (error) throw envolverErrorSupabase(error, 'Error al obtener la configuracion de impresora', true);
+
+      return {
+        config: {
+          ...fallbackConfig,
+          ...(data?.value || {}),
+        },
+      };
+    },
+
+    async guardarConfiguracionImpresora(body) {
+      requireSupabase();
+
+      const currentConfig = await ticketPrinterService?.cargarConfiguracionPersistida?.();
+      const validation = validarConfiguracionImpresora(body, currentConfig);
+      lanzarSiInvalido(validation);
+
+      const { data, error } = await repository.guardarAjuste(PRINTER_SETTINGS_KEY, validation.config);
+      if (error) throw envolverErrorSupabase(error, 'Error al guardar la configuracion de impresora', true);
+
+      const config = ticketPrinterService?.actualizarConfiguracionLocal?.(data?.value || validation.config)
+        || validation.config;
+
+      return {
+        message: 'Configuracion de impresora guardada correctamente',
+        config,
+      };
     },
   };
 }

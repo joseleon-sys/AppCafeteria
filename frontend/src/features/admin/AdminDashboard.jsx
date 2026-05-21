@@ -11,12 +11,15 @@ import {
   obtenerEstadisticasAdmin,
   obtenerRegistroFraude,
   obtenerColaPedidosAdmin,
+  obtenerConfiguracionImpresora,
+  guardarConfiguracionImpresora,
   cerrarSesion,
 } from "../../lib/api";
 import { limpiarSesion } from "../../lib/sesion";
 import "../../pages/AdminDashboard.css";
 import AdminOrdersPanel from "./components/AdminOrdersPanel";
 import AdminProductsPanel, { EMPTY_PRODUCT_FORM } from "./components/AdminProductsPanel";
+import AdminPrinterSettings, { DEFAULT_PRINTER_CONFIG } from "./components/AdminPrinterSettings";
 import AdminSecurityLog from "./components/AdminSecurityLog";
 import AdminStats, { AdminDashboardStats } from "./components/AdminStats";
 import AdminUsersTable from "./components/AdminUsersTable";
@@ -28,6 +31,11 @@ const MENU_ITEMS = [
   { key: "usuarios", label: "Usuarios", icon: "👥" },
   { key: "fraude", label: "Fraude Log", icon: "⚠️" },
   { key: "kds", label: "Kitchen Display", icon: "🖥️" },
+];
+
+const ADMIN_MENU_ITEMS = [
+  ...MENU_ITEMS,
+  { key: "impresora", label: "Impresora", icon: "I" },
 ];
 
 const FALLBACK_STATISTICS = {
@@ -50,6 +58,9 @@ export default function AdminDashboard({ onLogout }) {
   const [orders, setOrders] = useState([]);
   const [statistics, setStatistics] = useState(null);
   const [fraudLog, setFraudLog] = useState([]);
+  const [printerConfig, setPrinterConfig] = useState(DEFAULT_PRINTER_CONFIG);
+  const [printerSaving, setPrinterSaving] = useState(false);
+  const [printerMessage, setPrinterMessage] = useState(null);
   const [loading, setLoading] = useState(true);
   const [editProduct, setEditProduct] = useState(null);
   const [blockingUser, setBlockingUser] = useState(null);
@@ -63,12 +74,13 @@ export default function AdminDashboard({ onLogout }) {
   const cargarDatosPanel = async () => {
     setLoading(true);
     try {
-      const [productsRes, statsRes, fraudRes, usersRes, ordersRes] = await Promise.all([
+      const [productsRes, statsRes, fraudRes, usersRes, ordersRes, printerRes] = await Promise.all([
         obtenerTodosLosProductos(),
         cargarEstadisticas(),
         cargarRegistroFraude(),
         cargarUsuarios(),
         cargarPedidos(),
+        cargarConfiguracionImpresora(),
       ]);
 
       setProducts(productsRes.data || []);
@@ -76,6 +88,7 @@ export default function AdminDashboard({ onLogout }) {
       setFraudLog(fraudRes || []);
       setUsers(usersRes || []);
       setOrders(ordersRes || []);
+      setPrinterConfig({ ...DEFAULT_PRINTER_CONFIG, ...(printerRes || {}) });
     } catch (error) {
       console.error("Error cargando datos:", error);
     } finally {
@@ -119,6 +132,36 @@ export default function AdminDashboard({ onLogout }) {
     } catch (err) {
       console.error("Error en órdenes:", err);
       return [];
+    }
+  };
+
+  const cargarConfiguracionImpresora = async () => {
+    try {
+      const data = await obtenerConfiguracionImpresora();
+      return data.config || DEFAULT_PRINTER_CONFIG;
+    } catch (err) {
+      console.error("Error en configuracion de impresora:", err);
+      return DEFAULT_PRINTER_CONFIG;
+    }
+  };
+
+  const gestionarGuardarImpresora = async () => {
+    setPrinterSaving(true);
+    setPrinterMessage(null);
+    try {
+      const response = await guardarConfiguracionImpresora({
+        enabled: Boolean(printerConfig.enabled),
+        host: printerConfig.host,
+        port: Number.parseInt(printerConfig.port, 10),
+        timeoutMs: Number.parseInt(printerConfig.timeoutMs, 10),
+      });
+      setPrinterConfig({ ...DEFAULT_PRINTER_CONFIG, ...(response.config || {}) });
+      setPrinterMessage({ type: "success", text: "Configuracion guardada correctamente" });
+    } catch (error) {
+      console.error("Error al guardar impresora:", error);
+      setPrinterMessage({ type: "error", text: error.message || "Error al guardar la configuracion" });
+    } finally {
+      setPrinterSaving(false);
     }
   };
 
@@ -251,7 +294,7 @@ export default function AdminDashboard({ onLogout }) {
         </div>
 
         <nav className="sidebar-menu">
-          {MENU_ITEMS.map((item) => (
+          {ADMIN_MENU_ITEMS.map((item) => (
             <button
               key={item.key}
               className={`menu-item ${section === item.key ? "active" : ""}`}
@@ -316,6 +359,15 @@ export default function AdminDashboard({ onLogout }) {
             />
           )}
           {section === "kds" && <AdminOrdersPanel orders={orders} />}
+          {section === "impresora" && (
+            <AdminPrinterSettings
+              config={printerConfig}
+              saving={printerSaving}
+              message={printerMessage}
+              onChange={setPrinterConfig}
+              onSave={gestionarGuardarImpresora}
+            />
+          )}
         </div>
       </main>
     </div>

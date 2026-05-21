@@ -35,6 +35,17 @@ export async function obtenerColaPedidosAdmin() {
   return peticionApi('/api/admin/orders/queue', {}, { auth: true });
 }
 
+export async function obtenerConfiguracionImpresora() {
+  return peticionApi('/api/admin/printer-config', {}, { auth: true });
+}
+
+export async function guardarConfiguracionImpresora(configuracion) {
+  return peticionApi('/api/admin/printer-config', {
+    method: 'PUT',
+    body: JSON.stringify(configuracion),
+  }, { auth: true, contentType: true });
+}
+
 export async function obtenerRegistroFraude() {
   return peticionApi('/api/admin/fraud-log', {}, { auth: true });
 }

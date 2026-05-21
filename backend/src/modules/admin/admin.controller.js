@@ -50,5 +50,19 @@ export function crearAdminController(adminService) {
       },
       { publicMessage: 'Error al obtener la cola de cocina' },
     ),
+
+    obtenerConfiguracionImpresora: asyncHandler(
+      async (req, res) => {
+        return res.json(await adminService.obtenerConfiguracionImpresora());
+      },
+      { publicMessage: 'Error al obtener la configuracion de impresora' },
+    ),
+
+    guardarConfiguracionImpresora: asyncHandler(
+      async (req, res) => {
+        return res.json(await adminService.guardarConfiguracionImpresora(req.body));
+      },
+      { publicMessage: 'Error al guardar la configuracion de impresora' },
+    ),
   };
 }

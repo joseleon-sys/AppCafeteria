@@ -3,6 +3,7 @@ import { parsearValorBooleano } from '../utils/utilidadesApp.js';
 
 const DEFAULT_PRINTER_PORT = 9100;
 const DEFAULT_TIMEOUT_MS = 4000;
+const PRINTER_SETTINGS_KEY = 'ticket_printer';
 const TICKET_WIDTH = 32;
 
 function normalizarTextoTicket(value) {
@@ -42,11 +43,50 @@ function itemLines(item) {
   return rows;
 }
 
-export function crearTicketPrinterService(env = process.env) {
-  const host = String(env.TICKET_PRINTER_HOST || '').trim();
-  const port = Number.parseInt(env.TICKET_PRINTER_PORT || DEFAULT_PRINTER_PORT, 10);
-  const timeoutMs = Number.parseInt(env.TICKET_PRINTER_TIMEOUT_MS || DEFAULT_TIMEOUT_MS, 10);
-  const enabled = parsearValorBooleano(env.TICKET_PRINTER_ENABLED, Boolean(host));
+function normalizarConfiguracionImpresora(rawConfig = {}, env = process.env) {
+  const envHost = String(env.TICKET_PRINTER_HOST || '').trim();
+  const host = String(rawConfig.host ?? envHost).trim();
+  const port = Number.parseInt(rawConfig.port ?? env.TICKET_PRINTER_PORT ?? DEFAULT_PRINTER_PORT, 10);
+  const timeoutMs = Number.parseInt(rawConfig.timeoutMs ?? env.TICKET_PRINTER_TIMEOUT_MS ?? DEFAULT_TIMEOUT_MS, 10);
+  const enabled = parsearValorBooleano(rawConfig.enabled ?? env.TICKET_PRINTER_ENABLED, Boolean(host));
+
+  return {
+    enabled,
+    host,
+    port: Number.isInteger(port) && port > 0 ? port : DEFAULT_PRINTER_PORT,
+    timeoutMs: Number.isInteger(timeoutMs) && timeoutMs > 0 ? timeoutMs : DEFAULT_TIMEOUT_MS,
+  };
+}
+
+export function crearTicketPrinterService(options = {}) {
+  const env = options.env || (options.TICKET_PRINTER_HOST !== undefined ? options : process.env);
+  const supabase = options.supabase || null;
+  let cachedConfig = normalizarConfiguracionImpresora({}, env);
+
+  async function cargarConfiguracionPersistida() {
+    if (!supabase) return cachedConfig;
+
+    try {
+      const { data, error } = await supabase
+        .from('app_settings')
+        .select('value')
+        .eq('key', PRINTER_SETTINGS_KEY)
+        .maybeSingle();
+
+      if (error) {
+        if (!String(error.message || '').toLowerCase().includes('app_settings')) {
+          console.error('No se pudo cargar la configuracion de impresora:', error.message);
+        }
+        return cachedConfig;
+      }
+
+      cachedConfig = normalizarConfiguracionImpresora(data?.value || {}, env);
+      return cachedConfig;
+    } catch (error) {
+      console.error('No se pudo cargar la configuracion de impresora:', error.message);
+      return cachedConfig;
+    }
+  }
 
   function construirTicket({ orderId, items = [], total = 0, title = 'Pedido cafeteria', customerName = null }) {
     const createdAt = new Date().toLocaleString('es-ES');
@@ -73,6 +113,7 @@ export function crearTicketPrinterService(env = process.env) {
   }
 
   async function imprimirTicketPedido(ticket) {
+    const { enabled, host, port, timeoutMs } = await cargarConfiguracionPersistida();
     if (!enabled || !host) return { skipped: true, reason: 'printer_disabled' };
 
     const payload = construirTicket(ticket);
@@ -97,6 +138,7 @@ export function crearTicketPrinterService(env = process.env) {
     try {
       return await imprimirTicketPedido(ticket);
     } catch (error) {
+      const { host, port } = cachedConfig;
       console.error('No se pudo imprimir el ticket:', {
         host,
         port,
@@ -108,6 +150,11 @@ export function crearTicketPrinterService(env = process.env) {
 
   return {
     construirTicket,
+    cargarConfiguracionPersistida,
+    actualizarConfiguracionLocal(config) {
+      cachedConfig = normalizarConfiguracionImpresora(config || {}, env);
+      return cachedConfig;
+    },
     imprimirTicketPedido,
     imprimirTicketPedidoSinFallo,
   };

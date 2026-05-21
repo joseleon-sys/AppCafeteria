@@ -814,6 +814,41 @@
   border-top: 1px solid #3a4254;
 }
 
+.printer-settings-grid {
+  max-width: 760px;
+}
+
+.printer-toggle {
+  background: #242d3d;
+  border: 1px solid #3a4254;
+  border-radius: 8px;
+  padding: 14px 16px;
+}
+
+.printer-timeout {
+  max-width: 320px;
+}
+
+.printer-message {
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  margin-top: 16px;
+  padding: 12px 14px;
+}
+
+.printer-message.success {
+  background: #123524;
+  border: 1px solid #27ae60;
+  color: #a8d5ba;
+}
+
+.printer-message.error {
+  background: #422a2a;
+  border: 1px solid #e74c3c;
+  color: #f5a5a5;
+}
+
 /* ===== RESPONSIVE ===== */
 @media (max-width: 768px) {
   .admin-sidebar {

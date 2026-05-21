@@ -26,6 +26,15 @@ export const deleteAdminUserSchema = {
   params: adminUserIdParamsSchema,
 };
 
+export const updatePrinterConfigSchema = {
+  body: z.object({
+    enabled: z.union([z.boolean(), z.string(), z.number()]).optional(),
+    host: z.string().trim().max(255).optional(),
+    port: z.union([z.number(), z.string()]).optional(),
+    timeoutMs: z.union([z.number(), z.string()]).optional(),
+  }).passthrough(),
+};
+
 export function validarIdUsuario(rawId) {
   const id = String(rawId || '').trim();
   if (!id) {
@@ -56,4 +65,41 @@ export function validarCambiosUsuario(body = {}) {
   }
 
   return { valid: true, updateData };
+}
+
+function parsearBooleano(rawValue) {
+  if (typeof rawValue === 'string') {
+    return ['true', '1', 'si', 'sí', 'sÃ­', 'on'].includes(rawValue.trim().toLowerCase());
+  }
+  return Boolean(rawValue);
+}
+
+function parsearEnteroPositivo(rawValue, fallback) {
+  const value = Number.parseInt(rawValue, 10);
+  return Number.isInteger(value) && value > 0 ? value : fallback;
+}
+
+export function validarConfiguracionImpresora(body = {}, currentConfig = {}) {
+  const host = String(body.host ?? currentConfig.host ?? '').trim();
+  const enabled = body.enabled === undefined ? Boolean(currentConfig.enabled) : parsearBooleano(body.enabled);
+  const port = parsearEnteroPositivo(body.port ?? currentConfig.port, 9100);
+  const timeoutMs = parsearEnteroPositivo(body.timeoutMs ?? currentConfig.timeoutMs, 4000);
+
+  if (enabled && !host) {
+    return { valid: false, statusCode: 400, message: 'La direccion de la impresora es requerida' };
+  }
+
+  if (port < 1 || port > 65535) {
+    return { valid: false, statusCode: 400, message: 'El puerto debe estar entre 1 y 65535' };
+  }
+
+  return {
+    valid: true,
+    config: {
+      enabled,
+      host,
+      port,
+      timeoutMs,
+    },
+  };
 }

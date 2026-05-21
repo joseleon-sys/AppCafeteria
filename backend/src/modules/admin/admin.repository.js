@@ -67,5 +67,21 @@ export function crearAdminRepository({ supabase }) {
         .order('fecha_creacion', { ascending: false })
         .limit(100);
     },
+
+    obtenerAjuste(key) {
+      return supabase
+        .from('app_settings')
+        .select('key, value, updated_at')
+        .eq('key', key)
+        .maybeSingle();
+    },
+
+    guardarAjuste(key, value) {
+      return supabase
+        .from('app_settings')
+        .upsert({ key, value, updated_at: new Date().toISOString() }, { onConflict: 'key' })
+        .select('key, value, updated_at')
+        .single();
+    },
   };
 }

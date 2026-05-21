@@ -2,7 +2,12 @@ import { crearAdminController } from './admin.controller.js';
 import { crearAdminRepository } from './admin.repository.js';
 import { crearAdminService } from './admin.service.js';
 import { validateRequest } from '../../middlewares/validateRequest.js';
-import { deleteAdminUserSchema, updateAdminUserSchema, updateUserBlockSchema } from './admin.validators.js';
+import {
+  deleteAdminUserSchema,
+  updateAdminUserSchema,
+  updatePrinterConfigSchema,
+  updateUserBlockSchema,
+} from './admin.validators.js';
 
 export function registerAdminRoutes(app, deps) {
   const {
@@ -22,4 +27,6 @@ export function registerAdminRoutes(app, deps) {
   app.put('/api/admin/users/:id', ...adminMiddlewares, validateRequest(updateAdminUserSchema), controller.actualizarUsuario);
   app.delete('/api/admin/users/:id', ...adminMiddlewares, validateRequest(deleteAdminUserSchema), controller.eliminarUsuario);
   app.get('/api/admin/orders/queue', ...adminMiddlewares, controller.listarColaPedidos);
+  app.get('/api/admin/printer-config', ...adminMiddlewares, controller.obtenerConfiguracionImpresora);
+  app.put('/api/admin/printer-config', ...adminMiddlewares, validateRequest(updatePrinterConfigSchema), controller.guardarConfiguracionImpresora);
 }

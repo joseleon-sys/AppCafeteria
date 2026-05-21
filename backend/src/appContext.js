@@ -53,7 +53,7 @@ export function crearContextoApp() {
   const { port: PORT, isProduction, isHosted, jwtSecret: JWT_SECRET } = createRuntimeConfig();
   const supabase = createSupabaseClient();
   const { stripe, developmentPaymentBypassEnabled } = createStripeConfig({ isProduction, isHosted });
-  const ticketPrinterService = crearTicketPrinterService();
+  const ticketPrinterService = crearTicketPrinterService({ supabase });
   const app = createExpressApp({ supabase, isHosted, isProduction });
 
   const requireAuth = createRequireAuth({ jwtSecret: JWT_SECRET });
